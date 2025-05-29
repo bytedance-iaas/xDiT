@@ -58,8 +58,8 @@ mkdir -p $OUTPUT_PATH
 mv dist/* $OUTPUT_PATH/
 mv $xfuser_version_bk xfuser/__version__.py
 
-if [ -z "$CUSTOM_TOS_AK" ] && [ -z "$CUSTOM_TOS_SK" ]; then
-    echo "CUSTOM_TOS_AK and CUSTOM_TOS_SK are not set, skip uploading to tos"
+if [ ! -z "$CUSTOM_XFUSER_VERSION" ] || [ -z "$CUSTOM_TOS_AK" ] || [ -z "$CUSTOM_TOS_SK" ]; then
+    echo "specified CUSTOM_XFUSER_VERSION or (CUSTOM_TOS_AK or CUSTOM_TOS_SK) are not set, skip uploading to tos"
 else
     # 上传制品到 tos
     wget $TOS_UTIL_URL -O tosutil && chmod +x tosutil
