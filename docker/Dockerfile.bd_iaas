@@ -2,23 +2,29 @@
 FROM iaas-gpu-cn-beijing.cr.volces.com/nvcr.io/nvidia/pytorch:24.07-py3
 
 ARG XFUSER_PYPI="https://scqq9isgq31i0fb8nt4eg.apigateway-cn-beijing.volceapi.com/simple/"
+ARG BYTED_PIP_INDEX="https://mirrors.byted.org/pypi/simple"
 ARG XFUSER_VERSION=""
 ARG WAN_BRANCH="release_0.0.3"
+ARG FLASH_ATTN_VERSION="2.7.4.post1"
 
 ARG FLA3_COMMIT="b443207c1fc4c98e4532aad4e88cfee1d590d996"
 
 # output is the xfuser wheel built by build_scm.sh, early check
 COPY ./output ./output
 
-# Install git
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+RUN sed -i 's/archive.ubuntu.com/mirrors.byted.org/g' /etc/apt/sources.list && \
+    sed -i 's/security.ubuntu.com/mirrors.byted.org/g' /etc/apt/sources.list && \
+    wget -qO - https://mirrors.byted.org/nvidia_all/ubuntu2204/x86_64/3bf863cc.pub | gpg --dearmor -o /etc/apt/trusted.gpg.d/nvidia.gpg && \
+    echo "deb https://mirrors.byted.org/nvidia_all/ubuntu2204/x86_64/ /" > /etc/apt/sources.list.d/nvidia.list
 
+# Install git
+RUN apt-get update && apt-get install -y git cuda-toolkit-12-9 && rm -rf /var/lib/apt/lists/*
 
 # Update pip to the latest version
-RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir --upgrade pip -i ${BYTED_PIP_INDEX}
 
 # Uninstall apex first
-RUN pip uninstall -y apex
+RUN pip uninstall -y apex opencv
 
 # # Install flash_attn separately with --use-pep517 flag
 # RUN pip install --no-cache-dir --use-pep517 flash-attn==2.6.3 flask
@@ -29,8 +35,8 @@ RUN if [ ! -z "${XFUSER_VERSION}" ]; then \
         pip install ./output/*.whl && rm -rf ./output; \
     fi && \
     rm -rf ./output && \
-    pip install yunchang && \
-    pip install flask 
+    pip install flask -i ${BYTED_PIP_INDEX} && \
+    MAX_JOBS=256 pip install -U flash-attn==${FLASH_ATTN_VERSION} --no-build-isolation -i ${BYTED_PIP_INDEX}
 
 RUN git clone https://github.com/Dao-AILab/flash-attention.git && \
     cd flash-attention/hopper && \
@@ -44,7 +50,16 @@ RUN mkdir /app && \
     cd /app && \
     git clone https://github.com/bytedance-iaas/Wan2.1.git && \
     cd Wan2.1 && \
-    git checkout ${WAN_BRANCH}
+    git checkout ${WAN_BRANCH} && \
+    pip install -r requirements.txt -i ${BYTED_PIP_INDEX}
+
+RUN pip install torch==2.7.0 torch-utils packaging torchvision torch_tensorrt yunchang==0.6.3.post1 && \
+    pip uninstall -y opencv-python
+
+RUN find / -name "pip.conf" -exec rm -rf {} \; && \
+    echo "[global]" > /etc/pip.conf && \
+    echo "index-url = https://mirrors.ivolces.com/pypi/simple" >> /etc/pip.conf && \
+    echo "trusted-host = mirrors.ivolces.com" >> /etc/pip.conf
 
 # Change to the xDiT directory
 WORKDIR /app
