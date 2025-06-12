@@ -7,6 +7,7 @@ from .pipeline_latte import xFuserLattePipeline
 from .pipeline_cogvideox import xFuserCogVideoXPipeline
 from .pipeline_consisid import xFuserConsisIDPipeline
 from .pipeline_hunyuandit import xFuserHunyuanDiTPipeline
+from .pipeline_wan import xFuserWanPipeline
 from .pipeline_stable_diffusion_xl import xFuserStableDiffusionXLPipeline
 from .pipeline_wan import xFuserWanPipeline
 __all__ = [

@@ -3,6 +3,7 @@ import torch
 import torch.distributed
 import torch.nn as nn
 
+from diffusers.models.embeddings import PatchEmbed
 from diffusers.models.transformers import WanTransformer3DModel
 from diffusers.models.modeling_outputs import Transformer2DModelOutput
 from diffusers.utils import USE_PEFT_BACKEND, is_torch_version, scale_lora_layers, USE_PEFT_BACKEND, unscale_lora_layers
@@ -30,6 +31,17 @@ from xfuser.model_executor.models.transformers.base_transformer import xFuserTra
 
 logger = init_logger(__name__)
 
+from diffusers.utils import (
+    USE_PEFT_BACKEND,
+    unscale_lora_layers,
+    scale_lora_layers,
+)
+
+from xfuser.core.distributed import is_pipeline_first_stage,is_pipeline_last_stage
+
+from xfuser.logger import init_logger
+
+logger = init_logger(__name__)
 
 @xFuserTransformerWrappersRegister.register(WanTransformer3DModel)
 class xFuserWanTransformer3DWrapper(xFuserTransformerBaseWrapper):
@@ -38,12 +50,12 @@ class xFuserWanTransformer3DWrapper(xFuserTransformerBaseWrapper):
         transformer: WanTransformer3DModel,
     ):
         super().__init__(
-           transformer=transformer,
-           transformer_blocks_name=["blocks"],
-        #    submodule_classes_to_wrap=[nn.Conv2d, CogVideoXPatchEmbed],
-        #    submodule_name_to_wrap=["attn1"]
+            transformer=transformer,
+            transformer_blocks_name=["blocks"],
+            submodule_classes_to_wrap=[nn.Conv2d, PatchEmbed],
+            submodule_name_to_wrap=["attn1"]
         )
-
+        transformer: WanTransformer3DModel
 
     @xFuserBaseWrapper.forward_check_condition
     def forward(
@@ -100,24 +112,26 @@ class xFuserWanTransformer3DWrapper(xFuserTransformerBaseWrapper):
                 hidden_states = block(hidden_states, encoder_hidden_states, timestep_proj, rotary_emb)
 
         # 5. Output norm, projection & unpatchify
-        shift, scale = (self.scale_shift_table + temb.unsqueeze(1)).chunk(2, dim=1)
+        if is_pipeline_last_stage():
+            shift, scale = (self.scale_shift_table + temb.unsqueeze(1)).chunk(2, dim=1)
 
-        # Move the shift and scale tensors to the same device as hidden_states.
-        # When using multi-GPU inference via accelerate these will be on the
-        # first device rather than the last device, which hidden_states ends up
-        # on.
-        shift = shift.to(hidden_states.device)
-        scale = scale.to(hidden_states.device)
+            # Move the shift and scale tensors to the same device as hidden_states.
+            # When using multi-GPU inference via accelerate these will be on the
+            # first device rather than the last device, which hidden_states ends up
+            # on.
+            shift = shift.to(hidden_states.device)
+            scale = scale.to(hidden_states.device)
 
-        hidden_states = (self.norm_out(hidden_states.float()) * (1 + scale) + shift).type_as(hidden_states)
-        hidden_states = self.proj_out(hidden_states)
+            hidden_states = (self.norm_out(hidden_states.float()) * (1 + scale) + shift).type_as(hidden_states)
+            hidden_states = self.proj_out(hidden_states)
 
-        hidden_states = hidden_states.reshape(
-            batch_size, post_patch_num_frames, post_patch_height, post_patch_width, p_t, p_h, p_w, -1
-        )
-        hidden_states = hidden_states.permute(0, 7, 1, 4, 2, 5, 3, 6)
-        output = hidden_states.flatten(6, 7).flatten(4, 5).flatten(2, 3)
-
+            hidden_states = hidden_states.reshape(
+                batch_size, post_patch_num_frames, post_patch_height, post_patch_width, p_t, p_h, p_w, -1
+            )
+            hidden_states = hidden_states.permute(0, 7, 1, 4, 2, 5, 3, 6)
+            output = hidden_states.flatten(6, 7).flatten(4, 5).flatten(2, 3)
+        else:
+            output = hidden_states
         if USE_PEFT_BACKEND:
             # remove `lora_scale` from each PEFT layer
             unscale_lora_layers(self, lora_scale)
