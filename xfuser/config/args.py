@@ -105,6 +105,7 @@ class xFuserArgs:
     enable_sequential_cpu_offload: bool = False
     enable_tiling: bool = False
     enable_slicing: bool = False
+    enable_fa3: bool = False
     # DiTFastAttn arguments
     use_fast_attn: bool = False
     n_calib: int = 8
@@ -322,6 +323,11 @@ class xFuserArgs:
             action="store_true",
             help="Quantize the T5 text encoder.",
         )
+        runtime_group.add_argument(
+            "--enable_fa3",
+            action="store_true",
+            help="Enable FlashAttention 3.",
+        )
 
         # DiTFastAttn arguments
         fast_attn_group = parser.add_argument_group("DiTFastAttn Options")
@@ -444,6 +450,7 @@ class xFuserArgs:
             runtime_config=runtime_config,
             parallel_config=parallel_config,
             fast_attn_config=fast_attn_config,
+            enable_fa3=self.enable_fa3,
         )
 
         input_config = InputConfig(
