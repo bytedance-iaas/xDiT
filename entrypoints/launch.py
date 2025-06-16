@@ -16,6 +16,7 @@ from xfuser import (
     xFuserFluxPipeline,
     xFuserStableDiffusion3Pipeline,
     xFuserHunyuanDiTPipeline,
+    xFuserWanPipeline,
     xFuserArgs,
 )
 # Define request model
