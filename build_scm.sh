@@ -92,13 +92,19 @@ else
     if [ ! -z "${CUSTOM_FLA3_COMMIT}" ]; then
         fla3_commit_arg="--build-arg FLA3_COMMIT=${CUSTOM_FLA3_COMMIT}"
     fi
-
-    IMAGE_TAG=$(echo v${XFUSER_WHEEL_VERSION#v} | sed 's/+/./g')
-    IMAGE_TAG=$(echo "$IMAGE_TAG" | sed "s/\(.*\.\)[0-9]\+/\1$BUILD_TIME/")  # 替换为当前时戳
+    # 如果指定了 CUSTOM_IMAGE_TAG，则使用指定的 tag，否则使用默认的 tag
+    if [ ! -z "${CUSTOM_IMAGE_TAG}" ]; then
+        IMAGE_TAG=${CUSTOM_IMAGE_TAG}
+    else
+        IMAGE_TAG=$(echo v${XFUSER_WHEEL_VERSION#v} | sed 's/+/./g')
+        IMAGE_TAG=$(echo "$IMAGE_TAG" | sed "s/\(.*\.\)[0-9]\+/\1$BUILD_TIME/")  # 替换为当前时戳
+    fi
     echo "IMAGE_TAG: $IMAGE_TAG"
-    TARGET_IMAGE=iaas-gpu-cn-beijing.cr.volces.com/serving/xdit:${IMAGE_TAG}
-    docker login -u $CUSTOM_DOCKER_USERNAME -p $CUSTOM_DOCKER_PASSWORD iaas-gpu-cn-beijing.cr.volces.com
-    docker buildx build --network=host --push -t $TARGET_IMAGE -f docker/Dockerfile.bd_iaas $xfuse_arg $proxy_args $wan_branch_arg $fla3_commit_arg .
+    TARGET_IMAGE=hub.byted.org/iaas/xdit:${IMAGE_TAG}
+    skopeo login -u $CUSTOM_DOCKER_USERNAME -p $CUSTOM_DOCKER_PASSWORD ${TARGET_IMAGE%%/*}
+    docker buildx build --network=host -t $TARGET_IMAGE -f docker/Dockerfile.bd_iaas $xfuse_arg $proxy_args $wan_branch_arg $fla3_commit_arg .
+    docker images
+    http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= skopeo copy --insecure-policy --all --retry-times 10 docker-daemon:$TARGET_IMAGE docker://$TARGET_IMAGE
     echo "Pushed image to $TARGET_IMAGE"
     echo ${TARGET_IMAGE} > $OUTPUT_PATH/image_name
 fi
