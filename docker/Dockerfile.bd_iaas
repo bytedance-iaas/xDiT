@@ -46,6 +46,8 @@ RUN git clone https://github.com/Dao-AILab/flash-attention.git && \
 
 RUN git clone https://github.com/thu-ml/SageAttention.git && \
 	cd SageAttention && \
+	sed -i -e 's|^ *raise RuntimeError("No GPUs found. Please specify the target GPU architectures or build on a machine with GPUs.") *$|    compute_capabilities.add("9.0")|' setup.py && \
+	sed -i '/^        extra_link_args=\['\''-lcuda'\''\],$/d' setup.py && \
 	python3 setup.py install
 
 # Copy the entire comfyui-xdit directory into the container
