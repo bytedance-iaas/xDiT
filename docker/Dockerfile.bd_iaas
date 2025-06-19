@@ -18,6 +18,11 @@ RUN sed -i 's/archive.ubuntu.com/mirrors.byted.org/g' /etc/apt/sources.list && \
     wget -qO - https://mirrors.byted.org/nvidia_all/ubuntu2204/x86_64/3bf863cc.pub | gpg --dearmor -o /etc/apt/trusted.gpg.d/nvidia.gpg && \
     echo "deb https://mirrors.byted.org/nvidia_all/ubuntu2204/x86_64/ /" > /etc/apt/sources.list.d/nvidia.list
 
+# install onion
+RUN curl -fsSL https://mirrors.byted.org/extra-tools/ubuntu/GPG-KEY-system | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/volc-extra-tools.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/trusted.gpg.d/volc-extra-tools.gpg] http://mirrors.byted.org/extra-tools/ubuntu jammy main" > /etc/apt/sources.list.d/volctools.list && apt update && apt install -y onion-ai-data && \
+    rm -rf /etc/apt/sources.list.d/volctools.list
+
 # Install git
 RUN apt-get update && apt-get install -y git cuda-toolkit-12-9 && rm -rf /var/lib/apt/lists/*
 
