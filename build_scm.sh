@@ -13,6 +13,7 @@ BUILD_TIME=$(date +%Y%m%d%H%M)
 # 获取当前分支名，并将特殊字符转换为下划线
 BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
 echo "BRANCH_NAME: $BRANCH_NAME"
+xdit_branch_arg="--build-arg XDIT_BRANCH=${BRANCH_NAME}"
 
 # 如果分支是以 release_ 或 release/ 开头，则将 release_ 或 release/ 替换为空
 if [[ $BRANCH_NAME =~ ^release[\/_] ]]; then
@@ -102,7 +103,7 @@ else
     echo "IMAGE_TAG: $IMAGE_TAG"
     TARGET_IMAGE=hub.byted.org/iaas/xdit:${IMAGE_TAG}
     skopeo login -u $CUSTOM_DOCKER_USERNAME -p $CUSTOM_DOCKER_PASSWORD ${TARGET_IMAGE%%/*}
-    docker buildx build --network=host -t $TARGET_IMAGE -f docker/Dockerfile.bd_iaas $xfuse_arg $proxy_args $wan_branch_arg $fla3_commit_arg .
+    docker buildx build --network=host -t $TARGET_IMAGE -f docker/Dockerfile.bd_iaas $xfuse_arg $proxy_args $xdit_branch_arg $wan_branch_arg $fla3_commit_arg .
     docker images
     http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= skopeo copy --insecure-policy --all --retry-times 10 docker-daemon:$TARGET_IMAGE docker://$TARGET_IMAGE
     echo "Pushed image to $TARGET_IMAGE"
