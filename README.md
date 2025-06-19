@@ -45,7 +45,7 @@ Consequently, multi-GPU and multi-machine deployments are essential to meet the 
 
 
 <h3 id="meet-xdit-parallel">Parallel Inference</h3>
-
+add a test line
 To meet real-time demand for DiTs applications, parallel inference is a must.
 xDiT is an inference engine designed for the parallel deployment of DiTs on a large scale. 
 xDiT provides a suite of efficient parallel approaches for Diffusion Models, as well as computation accelerations.
