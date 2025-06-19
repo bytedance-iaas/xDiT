@@ -67,6 +67,17 @@ RUN mkdir /app && \
     git checkout ${WAN_BRANCH} && \
     pip install -r requirements.txt -i ${BYTED_PIP_INDEX}
 
+RUN cd /app && \
+    git clone https://github.com/bytedance-iaas/xDiT.git && \
+    cd xDiT && \
+    git checkout release_0.0.4
+
+RUN cd /app && \
+    git clone https://github.com/bytedance-iaas/diffusers.git && \
+    cd diffusers && \
+    git checkout iaas_main && \
+    pip install -e ".[torch]"
+
 RUN pip install torch==2.7.0 torch-utils packaging torchvision torch_tensorrt yunchang==0.6.3.post1 && \
     pip uninstall -y opencv-python
 

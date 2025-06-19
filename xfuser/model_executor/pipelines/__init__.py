@@ -8,7 +8,7 @@ from .pipeline_cogvideox import xFuserCogVideoXPipeline
 from .pipeline_consisid import xFuserConsisIDPipeline
 from .pipeline_hunyuandit import xFuserHunyuanDiTPipeline
 from .pipeline_stable_diffusion_xl import xFuserStableDiffusionXLPipeline
-
+from .pipeline_wan import xFuserWanPipeline
 __all__ = [
     "xFuserPipelineBaseWrapper",
     "xFuserPixArtAlphaPipeline",
@@ -20,4 +20,5 @@ __all__ = [
     "xFuserCogVideoXPipeline",
     "xFuserConsisIDPipeline",
     "xFuserStableDiffusionXLPipeline",
+    "xFuserWanPipeline",
 ]
