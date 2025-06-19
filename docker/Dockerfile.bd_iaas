@@ -20,7 +20,7 @@ RUN sed -i 's/archive.ubuntu.com/mirrors.byted.org/g' /etc/apt/sources.list && \
     echo "deb https://mirrors.byted.org/nvidia_all/ubuntu2204/x86_64/ /" > /etc/apt/sources.list.d/nvidia.list
 
 # install onion
-RUN curl -fsSL https://mirrors.byted.org/extra-tools/ubuntu/GPG-KEY-system | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/volc-extra-tools.gpg && \
+RUN curl -fsSL https://mirrors.byted.org/extra-tools/ubuntu/GPG-KEY-system | gpg --dearmor -o /etc/apt/trusted.gpg.d/volc-extra-tools.gpg && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/trusted.gpg.d/volc-extra-tools.gpg] http://mirrors.byted.org/extra-tools/ubuntu jammy main" > /etc/apt/sources.list.d/volctools.list && apt update && apt install -y onion-ai-data && \
     rm -rf /etc/apt/sources.list.d/volctools.list
 
