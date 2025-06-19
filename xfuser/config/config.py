@@ -62,6 +62,7 @@ class RuntimeConfig:
     use_fp8_t5_encoder: bool = False
     use_teacache: bool = False
     use_fbcache: bool = False
+    cache_threshold : float = 0.12
 
     def __post_init__(self):
         check_packages()
@@ -239,10 +240,12 @@ class EngineConfig:
     runtime_config: RuntimeConfig
     parallel_config: ParallelConfig
     fast_attn_config: FastAttnConfig
+    enable_fa3: bool = False
 
     def __post_init__(self):
         if self.fast_attn_config.use_fast_attn:
             assert self.parallel_config.dp_degree == self.parallel_config.dit_parallel_size, f"dit_parallel_size must be equal to dp_degree when using DiTFastAttn"
+
 
     def to_dict(self):
         """Return the configs as a dictionary, for use in **kwargs."""
@@ -263,6 +266,7 @@ class InputConfig:
     max_sequence_length: int = 256
     seed: int = 42
     output_type: str = "pil"
+    guidance_scale: float = 3.5
 
     def __post_init__(self):
         if isinstance(self.prompt, list):

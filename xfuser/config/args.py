@@ -100,10 +100,12 @@ class xFuserArgs:
     no_use_resolution_binning: bool = False
     seed: int = 42
     output_type: str = "pil"
+    guidance_scale: float = 3.5
     enable_model_cpu_offload: bool = False
     enable_sequential_cpu_offload: bool = False
     enable_tiling: bool = False
     enable_slicing: bool = False
+    enable_fa3: bool = False
     # DiTFastAttn arguments
     use_fast_attn: bool = False
     n_calib: int = 8
@@ -113,6 +115,7 @@ class xFuserArgs:
     use_cache: bool = False
     use_teacache: bool = False
     use_fbcache: bool = False
+    cache_threshold : float = 0.12
     use_fp8_t5_encoder: bool = False
 
     @staticmethod
@@ -166,6 +169,10 @@ class xFuserArgs:
             action="store_true",
             help="Enable teacache to accelerate inference in a single card",
         )
+        runtime_group.add_argument(
+            "--cache_threshold", type=float, default=0.12, help="Threshold for cache calculate."
+        )
+
 
         # Parallel arguments
         parallel_group = parser.add_argument_group("Parallel Processing Options")
@@ -290,6 +297,12 @@ class xFuserArgs:
             default="pil",
             help="Output type of the pipeline.",
         )
+        input_group.add_argument(
+            "--guidance_scale",
+            type=float,
+            default=3.5,
+            help="Guidance scale for classifier free guidance.",
+        )
         runtime_group.add_argument(
             "--enable_sequential_cpu_offload",
             action="store_true",
@@ -314,6 +327,11 @@ class xFuserArgs:
             "--use_fp8_t5_encoder",
             action="store_true",
             help="Quantize the T5 text encoder.",
+        )
+        runtime_group.add_argument(
+            "--enable_fa3",
+            action="store_true",
+            help="Enable FlashAttention 3.",
         )
 
         # DiTFastAttn arguments
@@ -437,6 +455,7 @@ class xFuserArgs:
             runtime_config=runtime_config,
             parallel_config=parallel_config,
             fast_attn_config=fast_attn_config,
+            enable_fa3=self.enable_fa3,
         )
 
         input_config = InputConfig(
@@ -452,6 +471,7 @@ class xFuserArgs:
             max_sequence_length=self.max_sequence_length,
             seed=self.seed,
             output_type=self.output_type,
+            guidance_scale=self.guidance_scale,
         )
 
         return engine_config, input_config
