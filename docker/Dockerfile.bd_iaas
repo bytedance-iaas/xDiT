@@ -74,7 +74,8 @@ RUN find / -name "pip.conf" -exec rm -rf {} \; && \
     echo "[global]" > /etc/pip.conf && \
     echo "index-url = https://mirrors.ivolces.com/pypi/simple" >> /etc/pip.conf && \
     echo "trusted-host = mirrors.ivolces.com" >> /etc/pip.conf && \
-	sed -i 's/byted.org/ivolces.com/g' /etc/apt/sources.list
+	sed -i 's/byted.org/ivolces.com/g' /etc/apt/sources.list && \
+	sed -i 's/byted.org/ivolces.com/g' /etc/apt/sources.list.d/nvidia.list
 
 
 # Change to the xDiT directory
