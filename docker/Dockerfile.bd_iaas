@@ -5,7 +5,8 @@ ARG XFUSER_PYPI="https://scqq9isgq31i0fb8nt4eg.apigateway-cn-beijing.volceapi.co
 ARG BYTED_PIP_INDEX="https://mirrors.byted.org/pypi/simple"
 ARG XFUSER_VERSION=""
 ARG WAN_BRANCH="release_0.0.3"
-ARG FLASH_ATTN_VERSION="2.7.4.post1"
+ARG FLASH_ATTN_VERSION="v2.8.0.post2"
+ARG FLASH_ATTN_WHEEL_NAME="flash_attn-2.8.0.post2+cu12torch2.7cxx11abiFALSE-cp310-cp310-linux_x86_64.whl"
 
 ARG FLA3_COMMIT="b443207c1fc4c98e4532aad4e88cfee1d590d996"
 ARG SAGE_ATTN_BRANCH="iaas_main"
@@ -42,7 +43,9 @@ RUN if [ ! -z "${XFUSER_VERSION}" ]; then \
     fi && \
     rm -rf ./output && \
     pip install flask -i ${BYTED_PIP_INDEX} && \
-    MAX_JOBS=256 pip install -U flash-attn==${FLASH_ATTN_VERSION} --no-build-isolation -i ${BYTED_PIP_INDEX}
+	wget https://github.com/Dao-AILab/flash-attention/releases/download/${FLASH_ATTN_VERSION}/${FLASH_ATTN_WHEEL_NAME} && \
+	pip install ${FLASH_ATTN_WHEEL_NAME} && \
+	rm -rf ${FLASH_ATTN_WHEEL_NAME}
 
 RUN git clone https://github.com/Dao-AILab/flash-attention.git && \
     cd flash-attention/hopper && \
