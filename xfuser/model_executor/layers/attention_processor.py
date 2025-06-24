@@ -45,6 +45,18 @@ if torch.__version__ >= "2.5.0":
 else:
     from xfuser.model_executor.layers.usp_legacy import USP
 
+try:
+    import flash_attn_interface
+    FLASH_ATTN_3_AVAILABLE = True
+except ModuleNotFoundError:
+    FLASH_ATTN_3_AVAILABLE = False
+
+try:
+    import sageattention
+    SAGE_ATTENTION_AVAILABLE = True
+except ModuleNotFoundError:
+    SAGE_ATTENTION_AVAILABLE = False
+
 logger = init_logger(__name__)
 
 env_info = PACKAGES_CHECKER.get_packages_info()
@@ -1596,13 +1608,10 @@ class xFuserWanAttnProcessor2_0(WanAttnProcessor2_0):
         )
         import yunchang
         from yunchang.kernels import AttnType
-        try:
-            import flash_attn_interface
-            FLASH_ATTN_3_AVAILABLE = True
-        except ModuleNotFoundError:
-            FLASH_ATTN_3_AVAILABLE = False
 
-        if FLASH_ATTN_3_AVAILABLE and self.enable_fa3:
+        if SAGE_ATTENTION_AVAILABLE and self.enable_sage_attn:
+            self.hybrid_seq_parallel_attn = xFuserLongContextAttention(attn_type=AttnType.SAGE_AUTO)
+        elif FLASH_ATTN_3_AVAILABLE and self.enable_fa3:
             self.hybrid_seq_parallel_attn = xFuserLongContextAttention(attn_type=AttnType.FA3)
         else:
             self.hybrid_seq_parallel_attn = xFuserLongContextAttention()

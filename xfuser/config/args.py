@@ -106,6 +106,7 @@ class xFuserArgs:
     enable_tiling: bool = False
     enable_slicing: bool = False
     enable_fa3: bool = False
+    enable_sage_attn: bool = False
     # DiTFastAttn arguments
     use_fast_attn: bool = False
     n_calib: int = 8
@@ -333,6 +334,12 @@ class xFuserArgs:
             action="store_true",
             help="Enable FlashAttention 3.",
         )
+        runtime_group.add_argument(
+            "--enable-sage-attn",
+            "--enable_sage_attn",
+            action="store_true",
+            help="Whether use sageattention for the attention layer.",
+        )
 
         # DiTFastAttn arguments
         fast_attn_group = parser.add_argument_group("DiTFastAttn Options")
@@ -456,6 +463,7 @@ class xFuserArgs:
             parallel_config=parallel_config,
             fast_attn_config=fast_attn_config,
             enable_fa3=self.enable_fa3,
+            enable_sage_attn=self.enable_sage_attn,
         )
 
         input_config = InputConfig(
