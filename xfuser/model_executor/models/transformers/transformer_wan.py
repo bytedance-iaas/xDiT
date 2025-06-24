@@ -12,30 +12,18 @@ from xfuser.model_executor.models import xFuserModelBaseWrapper
 from xfuser.logger import init_logger
 from xfuser.model_executor.base_wrapper import xFuserBaseWrapper
 from xfuser.core.distributed import (
-    get_data_parallel_world_size,
     get_sequence_parallel_world_size,
-    get_pipeline_parallel_world_size,
     get_classifier_free_guidance_world_size,
     get_classifier_free_guidance_rank,
-    get_pipeline_parallel_rank,
-    get_pp_group,
-    get_world_group,
-    get_cfg_group,
+    get_sequence_parallel_rank,
     get_sp_group,
-    get_runtime_state,
-    initialize_runtime_state
+    get_cfg_group
 )
 
 from xfuser.model_executor.models.transformers.register import xFuserTransformerWrappersRegister
 from xfuser.model_executor.models.transformers.base_transformer import xFuserTransformerBaseWrapper
+from xfuser.model_executor.layers.attention_processor import xFuserWanAttnProcessor2_0
 
-logger = init_logger(__name__)
-
-from diffusers.utils import (
-    USE_PEFT_BACKEND,
-    unscale_lora_layers,
-    scale_lora_layers,
-)
 
 from xfuser.core.distributed import is_pipeline_first_stage,is_pipeline_last_stage
 
@@ -52,10 +40,13 @@ class xFuserWanTransformer3DWrapper(xFuserTransformerBaseWrapper):
         super().__init__(
             transformer=transformer,
             transformer_blocks_name=["blocks"],
-            submodule_classes_to_wrap=[nn.Conv2d, PatchEmbed],
-            submodule_name_to_wrap=["attn1"]
+            # submodule_classes_to_wrap=[nn.Conv2d, PatchEmbed],
+            # submodule_name_to_wrap=["attn1"]
         )
         transformer: WanTransformer3DModel
+        for block in transformer.blocks:
+            block.attn1.processor = xFuserWanAttnProcessor2_0()
+            block.attn2.processor = xFuserWanAttnProcessor2_0()
 
     @xFuserBaseWrapper.forward_check_condition
     def forward(
@@ -93,6 +84,13 @@ class xFuserWanTransformer3DWrapper(xFuserTransformerBaseWrapper):
         hidden_states = self.patch_embedding(hidden_states)
         hidden_states = hidden_states.flatten(2).transpose(1, 2)
 
+        #split timestep hidden_states
+        timestep = torch.chunk(timestep, get_classifier_free_guidance_world_size(),dim=0)[get_classifier_free_guidance_rank()]
+        hidden_states = torch.chunk(hidden_states,
+                                    get_classifier_free_guidance_world_size(),
+                                    dim=0)[get_classifier_free_guidance_rank()]
+        hidden_states = torch.chunk(hidden_states, get_sequence_parallel_world_size(), dim=-2)[get_sequence_parallel_rank()]
+
         temb, timestep_proj, encoder_hidden_states, encoder_hidden_states_image = self.condition_embedder(
             timestep, encoder_hidden_states, encoder_hidden_states_image
         )
@@ -100,6 +98,23 @@ class xFuserWanTransformer3DWrapper(xFuserTransformerBaseWrapper):
 
         if encoder_hidden_states_image is not None:
             encoder_hidden_states = torch.concat([encoder_hidden_states_image, encoder_hidden_states], dim=1)
+
+        if encoder_hidden_states.shape[-2] % get_sequence_parallel_world_size() != 0:
+            split_text_embed_in_sp = False
+        else:
+            split_text_embed_in_sp = True
+        encoder_hidden_states = torch.chunk(encoder_hidden_states,get_classifier_free_guidance_world_size(),dim=0)[get_classifier_free_guidance_rank()]
+        if split_text_embed_in_sp:
+            encoder_hidden_states = torch.chunk(encoder_hidden_states, get_sequence_parallel_world_size(), dim=-2)[get_sequence_parallel_rank()]
+
+        freqs_cos, freqs_sin = rotary_emb
+        def get_rotary_emb_chunk(freqs):
+            freqs = torch.chunk(freqs, get_sequence_parallel_world_size(), dim=2)[get_sequence_parallel_rank()]
+            return freqs
+        freqs_cos = get_rotary_emb_chunk(freqs_cos)
+        freqs_sin = get_rotary_emb_chunk(freqs_sin)
+        rotary_emb = (freqs_cos, freqs_sin)
+        # CFG Done
 
         # 4. Transformer blocks
         if torch.is_grad_enabled() and self.gradient_checkpointing:
@@ -125,6 +140,9 @@ class xFuserWanTransformer3DWrapper(xFuserTransformerBaseWrapper):
             hidden_states = (self.norm_out(hidden_states.float()) * (1 + scale) + shift).type_as(hidden_states)
             hidden_states = self.proj_out(hidden_states)
 
+            hidden_states = get_sp_group().all_gather(hidden_states, dim=-2)
+            hidden_states = get_cfg_group().all_gather(hidden_states, dim=0)
+
             hidden_states = hidden_states.reshape(
                 batch_size, post_patch_num_frames, post_patch_height, post_patch_width, p_t, p_h, p_w, -1
             )
@@ -132,6 +150,7 @@ class xFuserWanTransformer3DWrapper(xFuserTransformerBaseWrapper):
             output = hidden_states.flatten(6, 7).flatten(4, 5).flatten(2, 3)
         else:
             output = hidden_states
+
         if USE_PEFT_BACKEND:
             # remove `lora_scale` from each PEFT layer
             unscale_lora_layers(self, lora_scale)

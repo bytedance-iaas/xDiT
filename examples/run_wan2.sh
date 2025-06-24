@@ -4,17 +4,17 @@ set -x
 export PYTHONPATH=$PWD:$PYTHONPATH
 
 # Wan2.1 configuration
-SCRIPT="wan2_cfg_usp_example.py"
+SCRIPT="wan2_example.py"
 MODEL_ID="/data00/models/Wan2.1-T2V-14B-Diffusers/"
 INFERENCE_STEP=50
 
 mkdir -p ./results
 
 # Wan2.1 specific task args
-TASK_ARGS="--height 720 --width 1280 --num_frames 81 --seed 0 --enable_fa3 --use_torch_compile"
-N_GPUS=8
-PARALLEL_ARGS="--ulysses_degree 4 --ring_degree 1"
-CFG_ARGS="--use_cfg_parallel"
+TASK_ARGS="--height 768 --width 1360 --num_frames 81 --seed 0 --enable_fa3 --use_torch_compile"
+N_GPUS=6
+PARALLEL_ARGS="--ulysses_degree 3 --ring_degree 2"
+# CFG_ARGS="--use_cfg_parallel"
 
 # Uncomment and modify these as needed
 # PIPEFUSION_ARGS="--num_pipeline_patch 8"

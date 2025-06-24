@@ -8,11 +8,7 @@ from xfuser.model_executor.pipelines import (
     xFuserCogVideoXPipeline,
     xFuserConsisIDPipeline,
     xFuserStableDiffusionXLPipeline,
-<<<<<<< HEAD
-    xFuserWanPipeline,
-=======
     xFuserWanPipeline
->>>>>>> ded751b (feat: add pipefusion examlples for Wan2.1)
 )
 from xfuser.config import xFuserArgs, EngineConfig
 from xfuser.parallel import xDiTParallel

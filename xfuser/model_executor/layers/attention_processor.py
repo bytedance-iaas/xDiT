@@ -1586,9 +1586,6 @@ if HunyuanVideoAttnProcessor2_0 is not None:
 else:
     xFuserHunyuanVideoAttnProcessor2_0 = None
 
-<<<<<<< HEAD
-from diffusers.models.transformers.transformer_wan import WanAttnProcessor2_0
-=======
 import yunchang
 from yunchang.kernels import AttnType
 try:
@@ -1598,7 +1595,6 @@ except ModuleNotFoundError:
     FLASH_ATTN_3_AVAILABLE = False
 from diffusers.models.transformers.transformer_wan import WanAttnProcessor2_0
 
->>>>>>> ded751b (feat: add pipefusion examlples for Wan2.1)
 @xFuserAttentionProcessorRegister.register(WanAttnProcessor2_0)
 class xFuserWanAttnProcessor2_0(WanAttnProcessor2_0):
     def __init__(self):
@@ -1606,7 +1602,7 @@ class xFuserWanAttnProcessor2_0(WanAttnProcessor2_0):
         from xfuser.core.long_ctx_attention import (
             xFuserLongContextAttention,
         )
-<<<<<<< HEAD
+
         import yunchang
         from yunchang.kernels import AttnType
         try:
@@ -1615,13 +1611,10 @@ class xFuserWanAttnProcessor2_0(WanAttnProcessor2_0):
         except ModuleNotFoundError:
             FLASH_ATTN_3_AVAILABLE = False
 
-        if FLASH_ATTN_3_AVAILABLE and self.enable_fa3:
-=======
         if  FLASH_ATTN_3_AVAILABLE and self.enable_fa3:
->>>>>>> ded751b (feat: add pipefusion examlples for Wan2.1)
             self.hybrid_seq_parallel_attn = xFuserLongContextAttention(attn_type=AttnType.FA3)
         else:
-            self.hybrid_seq_parallel_attn = xFuserLongContextAttention()
+            self.hybrid_seq_parallel_attn = None
     
     # NOTE() torch.compile dose not works for V100
     @torch_compile_disable_if_v100
@@ -1632,6 +1625,7 @@ class xFuserWanAttnProcessor2_0(WanAttnProcessor2_0):
         encoder_hidden_states: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         rotary_emb: Optional[torch.Tensor] = None,
+        latte_temporal_attention: Optional[bool] = False,
     ) -> torch.Tensor:
         encoder_hidden_states_img = None
 
