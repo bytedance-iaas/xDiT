@@ -241,6 +241,7 @@ class EngineConfig:
     parallel_config: ParallelConfig
     fast_attn_config: FastAttnConfig
     enable_fa3: bool = False
+    enable_sage_attn: bool = False
 
     def __post_init__(self):
         if self.fast_attn_config.use_fast_attn:

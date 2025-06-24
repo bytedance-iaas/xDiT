@@ -175,6 +175,11 @@ def main():
     engine_args = xFuserArgs.from_cli_args(args)
     engine_config, input_config = engine_args.create_config()
     
+    if args.enable_sage_attn:
+        setattr(xFuserWanAttnProcessor2_0, "enable_sage_attn", True)
+    else:
+        setattr(xFuserWanAttnProcessor2_0, "enable_sage_attn", False)
+
     if args.enable_fa3:
         assert torch.cuda.get_device_capability()[0] >= 9, (
             "FlashAttention v3 requires SM >= 90. "
