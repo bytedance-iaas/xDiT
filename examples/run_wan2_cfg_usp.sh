@@ -11,7 +11,7 @@ INFERENCE_STEP=50
 mkdir -p ./results
 
 # Wan2.1 specific task args
-TASK_ARGS="--height 720 --width 1280 --num_frames 81 --seed 0 --enable_fa3 --use_torch_compile --use_fbcache --cache_threshold 0.16"
+TASK_ARGS="--height 720 --width 1280 --num_frames 81 --seed 0 --enable_sage_attn --use_torch_compile --use_fbcache --cache_threshold 0.16"
 N_GPUS=8
 PARALLEL_ARGS="--ulysses_degree 4 --ring_degree 1"
 CFG_ARGS="--use_cfg_parallel"
