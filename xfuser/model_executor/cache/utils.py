@@ -254,7 +254,7 @@ class TeaCachedTransformerBlocks(CachedTransformerBlocks):
 
 
 @dataclasses.dataclass
-class CacheContext:
+class CacheContextWan:
     residual_diff_threshold: Union[torch.Tensor, float] = 0.0
     downsample_factor: int = 1
     num_inference_steps: int = -1
@@ -361,7 +361,7 @@ def is_in_warmup():
 _current_cache_context = None
 
 def create_cache_context(*args, **kwargs):
-    return CacheContext(*args, **kwargs)
+    return CacheContextWan(*args, **kwargs)
 
 def get_current_cache_context():
     return _current_cache_context
