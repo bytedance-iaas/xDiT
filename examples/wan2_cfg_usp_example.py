@@ -107,13 +107,22 @@ def parallelize_transformer(pipe: DiffusionPipeline):
         if split_text_embed_in_sp:
             encoder_hidden_states = torch.chunk(encoder_hidden_states, get_sequence_parallel_world_size(), dim=-2)[get_sequence_parallel_rank()]
 
-        freqs_cos, freqs_sin = rotary_emb
-        def get_rotary_emb_chunk(freqs):
-            freqs = torch.chunk(freqs, get_sequence_parallel_world_size(), dim=2)[get_sequence_parallel_rank()]
-            return freqs
-        freqs_cos = get_rotary_emb_chunk(freqs_cos)
-        freqs_sin = get_rotary_emb_chunk(freqs_sin)
-        rotary_emb = (freqs_cos, freqs_sin)
+        if isinstance(rotary_emb, tuple):
+            freqs_cos, freqs_sin = rotary_emb
+
+            def get_rotary_emb_chunk(freqs):
+                freqs = torch.chunk(freqs, get_sequence_parallel_world_size(), dim=2)[get_sequence_parallel_rank()]
+                return freqs
+
+            freqs_cos = get_rotary_emb_chunk(freqs_cos)
+            freqs_sin = get_rotary_emb_chunk(freqs_sin)
+            rotary_emb = (freqs_cos, freqs_sin)
+        else:
+            def get_rotary_emb_chunk(freqs):
+                freqs = torch.chunk(freqs, get_sequence_parallel_world_size(), dim=2)[get_sequence_parallel_rank()]
+                return freqs
+           
+            rotary_emb = get_rotary_emb_chunk(rotary_emb)
 
         #4. Transformer blocks
         if torch.is_grad_enabled() and self.gradient_checkpointing:
