@@ -640,6 +640,6 @@ class FBCachedWanTransformerBlocks(torch.nn.Module):
     
         mean_diff = (t1 - t2).abs().mean()
         mean_t1 = t1.abs().mean()
-        mean_diff, mean_norm = self.all_reduce(mean_diff.unsqueeze(0)), self.all_reduce(mean_t1.unsqueeze(0))
+        mean_diff, mean_t1 = self.all_reduce(mean_diff.unsqueeze(0)), self.all_reduce(mean_t1.unsqueeze(0))
         diff = (mean_diff / mean_t1).squeeze()
         return diff < threshold
