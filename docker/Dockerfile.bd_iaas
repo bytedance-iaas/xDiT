@@ -76,6 +76,8 @@ RUN cd /app && \
 RUN pip install torch==2.7.0 torch-utils packaging torchvision torch_tensorrt yunchang==0.6.3.post1 && \
     pip uninstall -y opencv-python
 
+RUN pip install ray
+
 RUN find / -name "pip.conf" -exec rm -rf {} \; && \
     echo "[global]" > /etc/pip.conf && \
     echo "index-url = https://mirrors.ivolces.com/pypi/simple" >> /etc/pip.conf && \

@@ -135,7 +135,6 @@ class VideoGenerator:
         if xfuser_args.use_torch_compile:
             self.pipe.transformer = torch.compile(self.pipe.transformer,
                                                   mode="default")
-                                                  #mode="max-autotune-no-cudagraphs")
 
         get_runtime_state().set_video_input_parameters(
             height=self.input_config.height,
