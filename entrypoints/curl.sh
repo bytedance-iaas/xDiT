@@ -1,7 +1,6 @@
 #!/bin/bash
 serverIP=${serverIP:-"127.0.0.1"}
-SAVE_DISK=${SAVE_DISK:-"False"}
-SAVE_DISK_PATH="/tmp"
+SAVE_SERVER=${SAVE_SERVER:-"False"}
 TMP_DIR="./tmp"
 mkdir -p $TMP_DIR
 PAYLOAD_FILE="$TMP_DIR/payload_$(date +"%Y%m%d_%H%M%S").json"
@@ -10,22 +9,20 @@ OUTPUT_FILE="$TMP_DIR/output_$(date +"%Y%m%d_%H%M%S").bin"
 
 {
     echo '{'
-    echo '"prompt": "a cute rabbit",'
+    echo '"prompt": "brown dog laying on the ground with a metal bowl in front of him.",'
     echo '"height": 1024,'
     echo '"width": 1024,'
-    echo '"num_inference_steps": 50,'
-    if [ $SAVE_DISK != "False" ] ;then
-        echo "\"save_disk_path\": \"$SAVE_DISK_PATH\"",
-    fi
-    echo '"seed": 42,'
-    echo '"cfg": 7.5'
+    echo '"num_inference_steps": 28,'
+    echo "\"save_server\": \"$SAVE_SERVER\"",
+    echo '"seed": 0,'
+    echo '"cfg": 3.5'
     echo '}'
 } > $PAYLOAD_FILE
 echo "[INFO] Payload JSON created at $PAYLOAD_FILE"
 cat $PAYLOAD_FILE
 
-echo "[INFO] SAVE DISK: $SAVE_DISK"
-if [ $SAVE_DISK = "True" ]; then
+echo "[INFO] SAVE_SERVER: $SAVE_SERVER"
+if [ "$(echo "$SAVE_SERVER" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
     curl -X POST "http://$serverIP:6000/generate" \
         -H "Content-Type: application/json" \
         --data-binary @"$PAYLOAD_FILE" \

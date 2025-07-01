@@ -18,13 +18,17 @@ from xfuser import (
     xFuserHunyuanDiTPipeline,
     xFuserArgs,
 )
+
+args = None
+
+
 # Define request model
 class GenerateRequest(BaseModel):
     prompt: str
     num_inference_steps: Optional[int] = 50
     seed: Optional[int] = 42
     cfg: Optional[float] = 7.5
-    save_disk_path: Optional[str] = None
+    save_server: Optional[str] = "False"
     height: Optional[int] = 1024
     width: Optional[int] = 1024
 
@@ -128,11 +132,12 @@ class ImageGenerator:
             elapsed_time = time.time() - start_time
 
             if self.pipe.is_dp_last_group():
-                if request.save_disk_path:
+                if str(request.save_server).lower() == "true":
+                    global args
                     timestamp = time.strftime("%Y%m%d-%H%M%S")
                     filename = f"generated_image_{timestamp}.png"
-                    file_path = os.path.join(request.save_disk_path, filename)
-                    os.makedirs(request.save_disk_path, exist_ok=True)
+                    file_path = os.path.join(args.save_path, filename)
+                    os.makedirs(args.save_path, exist_ok=True)
                     output.images[0].save(file_path)
                     return {
                         "message": "Image generated successfully",
@@ -199,11 +204,11 @@ async def generate_image(request: GenerateRequest):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='xDiT HTTP Service')
     parser.add_argument('--model_path', type=str, help='Path to the model', required=True)
+    parser.add_argument('--save_path', type=str, default='output', help='Path to save generated images')
     parser.add_argument('--world_size', type=int, default=1, help='Number of parallel workers')
     parser.add_argument('--pipefusion_parallel_degree', type=int, default=1, help='Degree of pipeline fusion parallelism')
     parser.add_argument('--ulysses_parallel_degree', type=int, default=1, help='Degree of Ulysses parallelism')
     parser.add_argument('--ring_degree', type=int, default=1, help='Degree of ring parallelism')
-    parser.add_argument('--save_disk_path', type=str, default='output', help='Path to save generated images')
     parser.add_argument('--use_cfg_parallel', action='store_true', help='Whether to use CFG parallel')
     parser.add_argument('--use_teacache', action='store_true', help='Whether to use teacache')
     parser.add_argument('--use_fbcache', action='store_true', help='Whether to use fbcache')

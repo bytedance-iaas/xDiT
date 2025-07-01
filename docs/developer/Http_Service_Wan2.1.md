@@ -18,11 +18,12 @@ python ./entrypoints/launch_video.py \
 ```
 
 
-To an example HTTP request is shown below. The `save_disk_path` parameter is optional - if not set, the video will be returned directly; if set, the generated video will be saved to the specified directory on disk.
+To an example HTTP request is shown below. The `SAVE_SERVER` parameter is optional - if not set, the video will be returned directly; if set true, the generated video will be saved to the specified directory on disk.
 
 ```bash
-SAVE_DISK=${SAVE_DISK:-"False"}
-SAVE_DISK_PATH="/tmp"
+#!/bin/bash
+serverIP=${serverIP:-"127.0.0.1"}
+SAVE_SERVER=${SAVE_SERVER:-"False"}
 TMP_DIR="./tmp"
 mkdir -p $TMP_DIR
 PAYLOAD_FILE="$TMP_DIR/payload_$(date +"%Y%m%d_%H%M%S").json"
@@ -37,9 +38,7 @@ OUTPUT_FILE="$TMP_DIR/output_$(date +"%Y%m%d_%H%M%S").bin"
     echo '"height": 720,'
     echo '"num_frames": 81',
     echo '"num_inference_steps": 50,'
-    if [ $SAVE_DISK != "False" ] ;then
-        echo "\"save_disk_path\": \"$SAVE_DISK_PATH\"",
-    fi
+    echo "\"save_server\": \"$SAVE_SERVER\"",
     echo '"seed": 0,'
     echo '"cfg": 5'
     echo '}'
@@ -47,14 +46,14 @@ OUTPUT_FILE="$TMP_DIR/output_$(date +"%Y%m%d_%H%M%S").bin"
 echo "[INFO] Payload JSON created at $PAYLOAD_FILE"
 cat $PAYLOAD_FILE
 
-echo "[INFO] SAVE DISK: $SAVE_DISK"
-if [ $SAVE_DISK = "True" ]; then
-    curl -X POST "http://localhost:6000/generate" \
+echo "[INFO] SAVE_SERVER: $SAVE_SERVER"
+if [ "$(echo "$SAVE_SERVER" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
+    curl -X POST "http://$serverIP:6000/generate" \
         -H "Content-Type: application/json" \
         --data-binary @"$PAYLOAD_FILE" \
         -w '\nResponse Time: %{time_total}s\n'
 else
-    curl -X POST "http://localhost:6000/generate" \
+    curl -X POST "http://$serverIP:6000/generate" \
         -H "Content-Type: application/json" \
         --data-binary @"$PAYLOAD_FILE" \
         -w '\nResponse Time: %{time_total}s\n' \
