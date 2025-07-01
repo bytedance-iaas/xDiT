@@ -30,6 +30,7 @@ from xfuser.core.distributed import (
     get_pipeline_parallel_world_size,
 )
 
+args = None
 
 # Define request model
 class GenerateRequest(BaseModel):
@@ -38,7 +39,7 @@ class GenerateRequest(BaseModel):
     num_inference_steps: Optional[int] = 50
     seed: Optional[int] = 0
     cfg: Optional[float] = 5
-    save_disk_path: Optional[str] = None
+    save_server: Optional[str] = "False"
     height: Optional[int] = 720
     width: Optional[int] = 1280
     num_frames: Optional[int] = 81
@@ -48,6 +49,7 @@ class GenerateRequest(BaseModel):
         json_schema_extra = {
             "example": {
                 "prompt": "a beautiful landscape",
+                "save_server": "False",
                 "num_inference_steps": 50,
                 "warmup_steps": 1,
                 "seed": 0,
@@ -171,11 +173,12 @@ class VideoGenerator:
                         writer.append_data(frame)
                 writer.close()
                 video_bytes = buffer.getvalue()
-                if request.save_disk_path:
+                if str(request.save_server).lower() == "true":
+                    global args
                     timestamp = time.strftime("%Y%m%d-%H%M%S")
                     filename = f"generated_video_{timestamp}.mp4"
-                    file_path = os.path.join(request.save_disk_path, filename)
-                    os.makedirs(request.save_disk_path, exist_ok=True)
+                    file_path = os.path.join(args.save_path, filename)
+                    os.makedirs(args.save_path, exist_ok=True)
                     with open(file_path, "wb") as f:
                         f.write(video_bytes)
                     logger.info(f"Video saved in {file_path}")
@@ -244,13 +247,13 @@ async def generate_video(request: GenerateRequest):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='xDiT HTTP Service')
     parser.add_argument('--model_path', type=str, help='Path to the model', required=True)
+    parser.add_argument('--save_path', type=str, default='output', help='Path to save generated videos')
     parser.add_argument('--world_size', type=int, default=1, help='Number of parallel workers')
     parser.add_argument('--pipefusion_parallel_degree', type=int, default=1,
                         help='Degree of pipeline fusion parallelism')
     parser.add_argument('--ulysses_parallel_degree', type=int, default=1,
                         help='Degree of Ulysses parallelism')
     parser.add_argument('--ring_degree', type=int, default=1, help='Degree of ring parallelism')
-    parser.add_argument('--save_disk_path', type=str, default='output', help='Path to save generated images')
     parser.add_argument('--use_cfg_parallel', action='store_true', help='Whether to use CFG parallel')
     parser.add_argument('--use_torch_compile', action='store_true', help='Whether to use torch compile')
     parser.add_argument('--enable_sage_attn', action='store_true', help='Whether to enable sage attn')
