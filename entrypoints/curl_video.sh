@@ -1,4 +1,5 @@
 #!/bin/bash
+serverIP=${serverIP:-"127.0.0.1"}
 SAVE_DISK=${SAVE_DISK:-"False"}
 SAVE_DISK_PATH="/tmp"
 TMP_DIR="./tmp"
@@ -27,12 +28,12 @@ cat $PAYLOAD_FILE
 
 echo "[INFO] SAVE DISK: $SAVE_DISK"
 if [ $SAVE_DISK = "True" ]; then
-    curl -X POST "http://localhost:6000/generate" \
+    curl -X POST "http://$serverIP:6000/generate" \
         -H "Content-Type: application/json" \
         --data-binary @"$PAYLOAD_FILE" \
         -w '\nResponse Time: %{time_total}s\n'
 else
-    curl -X POST "http://localhost:6000/generate" \
+    curl -X POST "http://$serverIP:6000/generate" \
         -H "Content-Type: application/json" \
         --data-binary @"$PAYLOAD_FILE" \
         -w '\nResponse Time: %{time_total}s\n' \

@@ -88,11 +88,26 @@ class ImageGenerator:
 
         self.logger.info(f"Initializing model {model_name} from {xfuser_args.model}")
 
-        self.pipe = PipelineClass.from_pretrained(
-            pretrained_model_name_or_path=xfuser_args.model,
-            engine_config=self.engine_config,
-            torch_dtype=torch.float16,
-        ).to("cuda")
+        if PipelineClass is xFuserFluxPipeline:
+            cache_args = {
+                "use_teacache": xfuser_args.use_teacache,
+                "use_fbcache": xfuser_args.use_fbcache,
+                "rel_l1_thresh": xfuser_args.cache_threshold,
+                "return_hidden_states_first": False,
+                "num_steps": xfuser_args.num_inference_steps,
+            }
+            self.pipe = PipelineClass.from_pretrained(
+                pretrained_model_name_or_path=xfuser_args.model,
+                engine_config=self.engine_config,
+                cache_args=cache_args,
+                torch_dtype=torch.float16,
+            ).to("cuda")
+        else:
+            self.pipe = PipelineClass.from_pretrained(
+                pretrained_model_name_or_path=xfuser_args.model,
+                engine_config=self.engine_config,
+                torch_dtype=torch.float16,
+            ).to("cuda")
         
         self.pipe.prepare_run(self.input_config)
         self.logger.info("Model initialization completed")
@@ -190,6 +205,9 @@ if __name__ == "__main__":
     parser.add_argument('--ring_degree', type=int, default=1, help='Degree of ring parallelism')
     parser.add_argument('--save_disk_path', type=str, default='output', help='Path to save generated images')
     parser.add_argument('--use_cfg_parallel', action='store_true', help='Whether to use CFG parallel')
+    parser.add_argument('--use_teacache', action='store_true', help='Whether to use teacache')
+    parser.add_argument('--use_fbcache', action='store_true', help='Whether to use fbcache')
+    parser.add_argument('--cache_threshold', type=float, default=0.12, help='Threshold of teacache and fbcache')
     args = parser.parse_args()
 
     xfuser_args = xFuserArgs(
@@ -202,6 +220,9 @@ if __name__ == "__main__":
         pipefusion_parallel_degree=args.pipefusion_parallel_degree,
         use_cfg_parallel=args.use_cfg_parallel,
         dit_parallel_size=0,
+        use_teacache=args.use_teacache,
+        use_fbcache=args.use_fbcache,
+        cache_threshold=args.cache_threshold,
     )
     
     engine = Engine(
