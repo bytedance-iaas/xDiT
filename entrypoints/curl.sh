@@ -35,10 +35,14 @@ else
         -D $HEADER_FILE \
         --output $OUTPUT_FILE
 
+    start_time=$(date +%s)
     output_data=$(jq -r '.output' $OUTPUT_FILE 2>/dev/null)
+    elapsed_time=$(jq -r '.elapsed_time' $OUTPUT_FILE 2>/dev/null)
     if [[ "$output_data" != "null" ]]; then
         echo $output_data | python3 -c 'import sys,base64; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read()))' > output.png
-        echo "[INFO] Image saved to output.png (Size: $(du -h "output.png" | cut -f1))"
+        end_time=$(date +%s)
+        cost=$((end - start))
+        echo "[INFO] Image saved to output.png (size: $(du -h "output.png" | cut -f1), cost: ${cost} sec, serving elapsed: ${elapsed_time})"
     else
         cat $OUTPUT_FILE
         echo "[Error] An error has occured"

@@ -55,7 +55,7 @@ class ImageGenerator:
         os.environ["WORLD_SIZE"] = str(world_size)
         os.environ["MASTER_ADDR"] = "127.0.0.1"
         os.environ["MASTER_PORT"] = "29500"
-        
+
         self.rank = rank
         self.setup_logger()
         self.initialize_model(xfuser_args)
@@ -75,7 +75,7 @@ class ImageGenerator:
 
         # init distributed environment in create_config
         self.engine_config, self.input_config = xfuser_args.create_config()
-        
+
         model_name = self.engine_config.model_config.model.split("/")[-1]
         pipeline_map = {
             "PixArt-XL-2-1024-MS": xFuserPixArtAlphaPipeline,
@@ -85,13 +85,14 @@ class ImageGenerator:
             "FLUX.1-schnell": xFuserFluxPipeline,
             "FLUX.1-dev": xFuserFluxPipeline,
         }
-        
+
         PipelineClass = pipeline_map.get(model_name)
         if PipelineClass is None:
             raise NotImplementedError(f"{model_name} is currently not supported!")
 
         self.logger.info(f"Initializing model {model_name} from {xfuser_args.model}")
 
+        load_start = time.time()
         if PipelineClass is xFuserFluxPipeline:
             cache_args = {
                 "use_teacache": xfuser_args.use_teacache,
@@ -112,7 +113,9 @@ class ImageGenerator:
                 engine_config=self.engine_config,
                 torch_dtype=torch.float16,
             ).to("cuda")
-        
+        load_elapsed = time.time() - load_start
+        self.logger.info(f"Model checkpoints loading elapsed: {load_elapsed:.2f} s")
+
         self.pipe.prepare_run(self.input_config)
         self.logger.info("Model initialization completed")
 
@@ -138,7 +141,10 @@ class ImageGenerator:
                     filename = f"generated_image_{timestamp}.png"
                     file_path = os.path.join(args.save_path, filename)
                     os.makedirs(args.save_path, exist_ok=True)
+                    save_start = time.time()
                     output.images[0].save(file_path)
+                    save_elapsed = time.time() - save_start
+                    self.logger.info(f"Save to {file_path} elapsed {save_elapsed:.2f} s")
                     return {
                         "message": "Image generated successfully",
                         "elapsed_time": f"{elapsed_time:.2f} sec",
@@ -148,8 +154,11 @@ class ImageGenerator:
                 else:
                     # Convert to base64
                     buffered = io.BytesIO()
+                    save_start = time.time()
                     output.images[0].save(buffered, format="PNG")
                     img_str = base64.b64encode(buffered.getvalue()).decode()
+                    save_elapsed = time.time() - save_start
+                    self.logger.info(f"Save to bytes buffer elapsed {save_elapsed:.2f} s")
                     return {
                         "message": "Image generated successfully",
                         "elapsed_time": f"{elapsed_time:.2f} sec",
@@ -167,20 +176,20 @@ class Engine:
         # Ensure Ray is initialized
         if not ray.is_initialized():
             ray.init()
-        
+
         num_workers = world_size
         self.workers = [
             ImageGenerator.remote(xfuser_args, rank=rank, world_size=world_size)
             for rank in range(num_workers)
         ]
-        
+
     async def generate(self, request: GenerateRequest):
         results = ray.get([
             worker.generate.remote(request)
             for worker in self.workers
         ])
 
-        return next(path for path in results if path is not None) 
+        return next(path for path in results if path is not None)
 
 @app.post("/generate")
 async def generate_image(request: GenerateRequest):
@@ -192,7 +201,7 @@ async def generate_image(request: GenerateRequest):
             raise HTTPException(status_code=400, detail="Height and width must be positive")
         if request.num_inference_steps <= 0:
             raise HTTPException(status_code=400, detail="num_inference_steps must be positive")
-            
+
         result = await engine.generate(request)
         return result
     except Exception as e:
@@ -229,12 +238,12 @@ if __name__ == "__main__":
         use_fbcache=args.use_fbcache,
         cache_threshold=args.cache_threshold,
     )
-    
+
     engine = Engine(
         world_size=args.world_size,
         xfuser_args=xfuser_args
     )
-    
+
     # Start the server
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=6000)
