@@ -168,11 +168,14 @@ class VideoGenerator:
             if self.pipe.is_dp_last_group():
                 video_frames = output.frames[0]
                 buffer = BytesIO()
+                write_start = time.time()
                 with imageio.get_writer(buffer, format="mp4", codec="libx264", fps=16, quality=8) as writer:
                     for frame in video_frames:
                         writer.append_data(frame)
                 writer.close()
                 video_bytes = buffer.getvalue()
+                write_elapsed = time.time() - write_start
+                logger.info(f"Writing frames to bytes buffer elapsed {write_elapsed:.2f} s")
                 if str(request.save_server).lower() == "true":
                     global args
                     timestamp = time.strftime("%Y%m%d-%H%M%S")

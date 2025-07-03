@@ -36,7 +36,7 @@ def main():
     args = xFuserArgs.add_cli_args(parser).parse_args()
     engine_args = xFuserArgs.from_cli_args(args)
     engine_config, input_config = engine_args.create_config()
-    
+
     if args.enable_sage_attn:
         setattr(xFuserWanAttnProcessor2_0, "enable_sage_attn", True)
     else:
@@ -58,13 +58,16 @@ def main():
         setattr(xFuserWanAttnProcessor2_0, "enable_fa3", True)
     else:
         setattr(xFuserWanAttnProcessor2_0, "enable_fa3", False)
-    
+
     assert engine_args.pipefusion_parallel_degree == 1, "This script does not support PipeFusion."
     assert engine_args.use_parallel_vae is False, "parallel VAE not implemented for Wan2.1"
 
+    start_time = time.time()
     text_encoder = UMT5EncoderModel.from_pretrained(engine_config.model_config.model, subfolder="text_encoder", torch_dtype=torch.bfloat16)
     vae = AutoencoderKLWan.from_pretrained(engine_config.model_config.model, subfolder="vae", torch_dtype=torch.float32)
     transformer = AutoModel.from_pretrained(engine_config.model_config.model, subfolder="transformer", torch_dtype=torch.bfloat16)
+    load_elapsed = time.time() - start_time
+    logging.info(f"loading checkpoint elapsed: {load_elapsed:.2f}")
 
     pipe = xFuserWanPipeline.from_pretrained(
         pretrained_model_name_or_path=engine_config.model_config.model,
@@ -111,7 +114,7 @@ def main():
         elif args.use_fbcache:
             use_cache="Fb"
         apply_cache_on_pipe(pipe=pipe, use_cache=use_cache, residual_diff_threshold=args.cache_threshold)
-    
+
     if engine_config.runtime_config.use_torch_compile:
         torch._inductor.config.reorder_for_compute_comm_overlap = True
         pipe.transformer = torch.compile(pipe.transformer,
@@ -153,8 +156,10 @@ def main():
     if is_dp_last_group():
         resolution = f"{input_config.width}x{input_config.height}"
         output_filename = f"results/wan_{parallel_info}_{resolution}.mp4"
+        start_time = time.time()
         export_to_video(output, output_filename, fps=16, quality=8)
-        print(f"output saved to {output_filename}")
+        save_elapsed = time.time() - start_time
+        print(f"output saved to {output_filename} elapsed {save_elapsed:.2f} s")
 
     if get_world_group().rank == get_world_group().world_size - 1:
         print(f"epoch time: {elapsed_time:.2f} sec, parameter memory: {parameter_peak_memory/1e9:.2f} GB, memory: {peak_memory/1e9} GB")
