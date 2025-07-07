@@ -101,12 +101,20 @@ class ImageGenerator:
                 "return_hidden_states_first": False,
                 "num_steps": xfuser_args.num_inference_steps,
             }
-            self.pipe = PipelineClass.from_pretrained(
-                pretrained_model_name_or_path=xfuser_args.model,
-                engine_config=self.engine_config,
-                cache_args=cache_args,
-                torch_dtype=torch.float16,
-            ).to("cuda")
+            if xfuser_args.use_svdq:
+                self.pipe = PipelineClass.from_pretrained(
+                    pretrained_model_name_or_path=xfuser_args.model,
+                    engine_config=self.engine_config,
+                    cache_args=cache_args,
+                    torch_dtype=torch.bfloat16,
+                ).to("cuda")
+            else:
+                self.pipe = PipelineClass.from_pretrained(
+                    pretrained_model_name_or_path=xfuser_args.model,
+                    engine_config=self.engine_config,
+                    cache_args=cache_args,
+                    torch_dtype=torch.float16,
+                ).to("cuda")
         else:
             self.pipe = PipelineClass.from_pretrained(
                 pretrained_model_name_or_path=xfuser_args.model,
@@ -222,6 +230,8 @@ if __name__ == "__main__":
     parser.add_argument('--use_teacache', action='store_true', help='Whether to use teacache')
     parser.add_argument('--use_fbcache', action='store_true', help='Whether to use fbcache')
     parser.add_argument('--cache_threshold', type=float, default=0.12, help='Threshold of teacache and fbcache')
+    parser.add_argument('--use_svdq', '--use-svdq', action='store_true', help='Use SVDQuant for FLUX model')
+    parser.add_argument('--svdq_quantized_model_path', '--svdq-quantized-model-path', type=str, default='', help='Quantized path to SVDQuant FLUX model')
     args = parser.parse_args()
 
     xfuser_args = xFuserArgs(
@@ -237,6 +247,8 @@ if __name__ == "__main__":
         use_teacache=args.use_teacache,
         use_fbcache=args.use_fbcache,
         cache_threshold=args.cache_threshold,
+        use_svdq=args.use_svdq,
+        svdq_quantized_model_path=args.svdq_quantized_model_path,
     )
 
     engine = Engine(
