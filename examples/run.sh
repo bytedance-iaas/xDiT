@@ -53,6 +53,9 @@ PARALLEL_ARGS="--pipefusion_parallel_degree 2 --ulysses_degree 2 --ring_degree 2
 # Use this flag to quantize the T5 text encoder, which could reduce the memory usage and have no effect on the result quality.
 # QUANTIZE_FLAG="--use_fp8_t5_encoder"
 
+# SVDQuant flag
+SVDQ_FLAG="--use_svdq --svdq_quantized_model_path /path/to/nunchaku-flux.1-dev/svdq-int4_r32-flux.1-dev.safetensors"
+
 # export CUDA_VISIBLE_DEVICES=4,5,6,7
 
 torchrun --nproc_per_node=$N_GPUS ./examples/$SCRIPT \
@@ -69,3 +72,4 @@ $PARALLLEL_VAE \
 $COMPILE_FLAG \
 $QUANTIZE_FLAG \
 $CACHE_ARGS \
+$SVDQ_FLAG

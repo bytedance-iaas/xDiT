@@ -61,7 +61,21 @@ class xFuserFluxPipeline(xFuserPipelineBaseWrapper):
         return_org_pipeline: bool = False,
         **kwargs,
     ):
-        pipeline = FluxPipeline.from_pretrained(pretrained_model_name_or_path, **kwargs)
+        if engine_config.use_svdq:
+            from nunchaku import NunchakuFluxTransformer2dModel
+
+            transformer = NunchakuFluxTransformer2dModel.from_pretrained(
+                engine_config.svdq_quantized_model_path
+            )
+            transformer.set_attention_impl("nunchaku-fp16")
+
+            pipeline = FluxPipeline.from_pretrained(pretrained_model_name_or_path, transformer=transformer, **kwargs)
+            if "use_fbcache" in cache_args and cache_args["use_fbcache"]:
+                from nunchaku.caching.diffusers_adapters import apply_cache_on_pipe
+                apply_cache_on_pipe(pipeline, residual_diff_threshold=cache_args["rel_l1_thresh"])
+        else:
+            pipeline = FluxPipeline.from_pretrained(pretrained_model_name_or_path, **kwargs)
+
         if return_org_pipeline:
             return pipeline
         return cls(pipeline, engine_config, cache_args)

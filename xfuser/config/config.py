@@ -242,6 +242,8 @@ class EngineConfig:
     fast_attn_config: FastAttnConfig
     enable_fa3: bool = False
     enable_sage_attn: bool = False
+    use_svdq: bool = False
+    svdq_quantized_model_path: str = ""
 
     def __post_init__(self):
         if self.fast_attn_config.use_fast_attn:
