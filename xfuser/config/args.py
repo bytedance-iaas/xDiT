@@ -118,6 +118,8 @@ class xFuserArgs:
     use_fbcache: bool = False
     cache_threshold : float = 0.12
     use_fp8_t5_encoder: bool = False
+    use_svdq: bool = False
+    svdq_quantized_model_path: str = ""
 
     @staticmethod
     def add_cli_args(parser: FlexibleArgumentParser):
@@ -340,6 +342,17 @@ class xFuserArgs:
             action="store_true",
             help="Whether use sageattention for the attention layer.",
         )
+        runtime_group.add_argument(
+            "--use_svdq",
+            "--use-svdq",
+            action="store_true",
+            help="Whether use SVDQuant or not.",
+        )
+        runtime_group.add_argument(
+            "--svdq-quantized-model-path",
+            "--svdq_quantized_model_path",
+            help="Path to SVDQuant quantized model."
+        )
 
         # DiTFastAttn arguments
         fast_attn_group = parser.add_argument_group("DiTFastAttn Options")
@@ -464,6 +477,8 @@ class xFuserArgs:
             fast_attn_config=fast_attn_config,
             enable_fa3=self.enable_fa3,
             enable_sage_attn=self.enable_sage_attn,
+            use_svdq=self.use_svdq,
+            svdq_quantized_model_path=self.svdq_quantized_model_path,
         )
 
         input_config = InputConfig(
