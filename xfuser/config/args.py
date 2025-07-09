@@ -69,6 +69,7 @@ class xFuserArgs:
     # use_profiler: bool = False
     use_torch_compile: bool = False
     use_onediff: bool = False
+    use_tensorrt: bool = False
     # Parallel arguments
     # data parallel
     data_parallel_degree: int = 1
@@ -157,6 +158,12 @@ class xFuserArgs:
             "--use_onediff",
             action="store_true",
             help="Enable onediff to accelerate inference in a single card",
+        )
+        # 添加TensorRT参数
+        runtime_group.add_argument(
+            "--use_tensorrt",
+            action="store_true",
+            help="Enable TensorRT compilation to accelerate inference",
         )
         runtime_group.add_argument(
             "--use_teacache",
@@ -404,6 +411,8 @@ class xFuserArgs:
             use_parallel_vae=self.use_parallel_vae,
             use_torch_compile=self.use_torch_compile,
             use_onediff=self.use_onediff,
+            # 添加TensorRT配置
+            use_tensorrt=self.use_tensorrt,
             # use_profiler=self.use_profiler,
             use_fp8_t5_encoder=self.use_fp8_t5_encoder,
         )

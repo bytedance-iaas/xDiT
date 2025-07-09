@@ -62,6 +62,31 @@ except:
 
 logger = init_logger(__name__)
 
+
+def ensure_uniform_dtype(model, target_dtype=torch.float16):
+    """递归转换模型中所有参数到统一的数据类型"""
+    for name, param in model.named_parameters():
+        param.data = param.data.to(target_dtype)
+    
+    for name, buffer in model.named_buffers():
+        buffer.data = buffer.data.to(target_dtype)
+    
+    return model
+
+
+# 在文件顶部添加一个辅助函数来递归地转换张量类型
+def _ensure_tensor_dtype(item, target_dtype=torch.float16):
+    """递归地确保所有浮点张量都是目标数据类型"""
+    if isinstance(item, torch.Tensor):
+        if item.dtype == torch.bfloat16 or (item.dtype != target_dtype and item.is_floating_point()):
+            return item.to(target_dtype)
+        return item
+    elif isinstance(item, (list, tuple)):
+        return type(item)([_ensure_tensor_dtype(x, target_dtype) for x in item])
+    elif isinstance(item, dict):
+        return {k: _ensure_tensor_dtype(v, target_dtype) for k, v in item.items()}
+    return item
+
 class xFuserVAEWrapper:
     def __init__(
         self, 
@@ -163,6 +188,7 @@ class xFuserPipelineBaseWrapper(xFuserBaseWrapper, metaclass=ABCMeta):
                 transformer,
                 enable_torch_compile=engine_config.runtime_config.use_torch_compile,
                 enable_onediff=engine_config.runtime_config.use_onediff,
+                enable_tensorrt=engine_config.runtime_config.use_tensorrt,
                 cache_args=cache_args,
             )
         elif unet is not None:
@@ -253,6 +279,43 @@ class xFuserPipelineBaseWrapper(xFuserBaseWrapper, metaclass=ABCMeta):
 
         return data_parallel_fn
 
+    # @staticmethod
+    # def enable_data_parallel(func):
+    #     @wraps(func)
+    #     def data_parallel_fn(self, *args, **kwargs):
+    #         # 先转换输入为float16
+    #         float16_args = _ensure_tensor_dtype(args)
+    #         float16_kwargs = _ensure_tensor_dtype(kwargs)
+            
+    #         prompt = float16_kwargs.get("prompt", None)
+    #         negative_prompt = float16_kwargs.get("negative_prompt", "")
+    #         # dp_degree <= batch_size
+    #         batch_size = len(prompt) if isinstance(prompt, list) else 1
+    #         if batch_size > 1:
+    #             dp_degree = get_runtime_state().parallel_config.dp_degree
+    #             dp_group_rank = get_world_group().rank // (
+    #                 get_dit_world_size() // get_data_parallel_world_size()
+    #             )
+    #             dp_group_batch_size = (batch_size + dp_degree - 1) // dp_degree
+    #             start_batch_idx = dp_group_rank * dp_group_batch_size
+    #             end_batch_idx = min(
+    #                 (dp_group_rank + 1) * dp_group_batch_size, batch_size
+    #             )
+    #             prompt = prompt[start_batch_idx:end_batch_idx]
+    #             if isinstance(negative_prompt, List):
+    #                 negative_prompt = negative_prompt[start_batch_idx:end_batch_idx]
+    #             float16_kwargs["prompt"] = prompt
+    #             if "negative_prompt" in float16_kwargs:
+    #                 float16_kwargs["negative_prompt"] = negative_prompt
+            
+    #         # 调用原始函数
+    #         result = func(self, *float16_args, **float16_kwargs)
+            
+    #         # 确保结果也是目标数据类型
+    #         return _ensure_tensor_dtype(result)
+
+    #     return data_parallel_fn
+
     def use_naive_forward(self):
         return (
                 get_pipeline_parallel_world_size() == 1
@@ -273,6 +336,29 @@ class xFuserPipelineBaseWrapper(xFuserBaseWrapper, metaclass=ABCMeta):
                 return func(self, *args, **kwargs)
 
         return check_naive_forward_fn
+
+
+    # 修改check_naive_forward_fn方法
+    # @staticmethod
+    # def check_to_use_naive_forward(func):
+    #     @wraps(func)
+    #     def check_naive_forward_fn(self, *args, **kwargs):
+    #         # 转换输入参数为float16
+    #         float16_args = _ensure_tensor_dtype(args)
+    #         float16_kwargs = _ensure_tensor_dtype(kwargs)
+            
+    #         if self.use_naive_forward():
+    #             # 使用转换后的参数调用模块
+    #             result = self.module(*float16_args, **float16_kwargs)
+    #             # 确保结果也是float16
+    #             return _ensure_tensor_dtype(result)
+    #         else:
+    #             # 使用转换后的参数调用原始函数
+    #             result = func(self, *float16_args, **float16_kwargs)
+    #             # 确保结果也是float16
+    #             return _ensure_tensor_dtype(result)
+
+    #     return check_naive_forward_fn
 
     @staticmethod
     def check_model_parallel_state(
@@ -307,6 +393,49 @@ class xFuserPipelineBaseWrapper(xFuserBaseWrapper, metaclass=ABCMeta):
             return wrapper
 
         return decorator
+
+    # @staticmethod
+    # def check_model_parallel_state(
+    #     cfg_parallel_available: bool = True,
+    #     sequence_parallel_available: bool = True,
+    #     pipefusion_parallel_available: bool = True,
+    # ):
+    #     def decorator(func):
+    #         @wraps(func)
+    #         def wrapper(*args, **kwargs):
+    #             if (
+    #                 not cfg_parallel_available
+    #                 and get_runtime_state().parallel_config.cfg_degree > 1
+    #             ):
+    #                 raise RuntimeError("CFG parallelism is not supported by the model")
+    #             if (
+    #                 not sequence_parallel_available
+    #                 and get_runtime_state().parallel_config.sp_degree > 1
+    #             ):
+    #                 raise RuntimeError(
+    #                     "Sequence parallelism is not supported by the model"
+    #                 )
+    #             if (
+    #                 not pipefusion_parallel_available
+    #                 and get_runtime_state().parallel_config.pp_degree > 1
+    #             ):
+    #                 raise RuntimeError(
+    #                     "Pipefusion parallelism is not supported by the model"
+    #                 )
+                    
+    #             # 转换输入参数为float16
+    #             float16_args = _ensure_tensor_dtype(args)
+    #             float16_kwargs = _ensure_tensor_dtype(kwargs)
+                
+    #             # 使用转换后的参数调用原始函数
+    #             result = func(*float16_args, **float16_kwargs)
+                
+    #             # 确保结果也是float16
+    #             return _ensure_tensor_dtype(result)
+
+    #         return wrapper
+
+    #     return decorator
 
     def forward(self):
         pass
@@ -360,7 +489,7 @@ class xFuserPipelineBaseWrapper(xFuserBaseWrapper, metaclass=ABCMeta):
         initialize_fast_attn_state(pipeline=pipeline, single_config=engine_config.fast_attn_config)
 
     def _convert_transformer_backbone(
-        self, transformer: nn.Module, enable_torch_compile: bool, enable_onediff: bool, cache_args: Optional[Dict] = None,
+        self, transformer: nn.Module, enable_torch_compile: bool, enable_onediff: bool, enable_tensorrt: bool = False, cache_args: Optional[Dict] = None,
     ):
         if (
             get_pipeline_parallel_world_size() == 1
@@ -382,6 +511,19 @@ class xFuserPipelineBaseWrapper(xFuserBaseWrapper, metaclass=ABCMeta):
             logger.warning(
                 f"apply --use_torch_compile and --use_onediff togather. we use torch compile only"
             )
+        # 添加检查互斥项
+        print("-"*10)
+        print(enable_onediff,enable_tensorrt,enable_torch_compile)
+        print("-"*10)
+        if sum([enable_torch_compile, enable_onediff, enable_tensorrt]) > 1:
+            logger.warning(
+                f"Multiple compilation methods enabled. Using only one in priority: TensorRT > torch.compile > onediff"
+            )
+            if enable_tensorrt:
+                enable_torch_compile = False
+                enable_onediff = False
+            elif enable_torch_compile:
+                enable_onediff = False
         if cache_args:
             use_teacache = cache_args["use_teacache"]
             use_fbcache = cache_args["use_fbcache"]
@@ -405,7 +547,7 @@ class xFuserPipelineBaseWrapper(xFuserBaseWrapper, metaclass=ABCMeta):
 
                 transformer = apply_cache_on_transformer(transformer, **cache_args)
         self.original_transformer = transformer
-        if enable_torch_compile or enable_onediff:
+        if enable_torch_compile or enable_onediff or enable_tensorrt:
             if getattr(transformer, "forward") is not None:
                 if enable_torch_compile:
                     if "flash_attn" in sys.modules:
@@ -429,6 +571,97 @@ class xFuserPipelineBaseWrapper(xFuserBaseWrapper, metaclass=ABCMeta):
                         backend="nexfort",
                         options=options,
                     )
+                elif enable_tensorrt:
+                    # 检查依赖
+                    transformer = ensure_uniform_dtype(transformer, torch.float16)
+                    try:
+                        import torch_tensorrt
+                        from torch.export._trace import _export
+                    except ImportError:
+                        raise ImportError(
+                            "To use TensorRT compilation, please install torch-tensorrt: "
+                            "pip install torch-tensorrt"
+                        )
+                    
+                    logger.info("Compiling transformer with TensorRT...")
+                    
+                    # 存储原始配置
+                    config = getattr(transformer, "config", None)
+                    device = next(transformer.parameters()).device
+                    transformer = transformer.to("cuda")
+                    device = "cuda"
+
+
+                    # 创建动态尺寸
+                    BATCH = torch.export.Dim("batch", min=1, max=2)
+                    SEQ_LEN = torch.export.Dim("seq_len", min=1, max=512)
+                    IMG_ID = torch.export.Dim("img_id", min=3586, max=4096)
+                    
+                    # 定义动态形状
+                    dynamic_shapes = {
+                        "hidden_states": {0: BATCH},
+                        "encoder_hidden_states": {0: BATCH, 1: SEQ_LEN},
+                        "pooled_projections": {0: BATCH},
+                        "timestep": {0: BATCH},
+                        "txt_ids": {0: SEQ_LEN},
+                        "img_ids": {0: IMG_ID},
+                        "guidance": {0: BATCH},
+                        "joint_attention_kwargs": {},
+                        "return_dict": None,
+                    }
+                    
+                    # 创建dummy输入
+                    batch_size = 2
+                    dummy_inputs = {
+                        "hidden_states": torch.randn((batch_size, 4096, 64), dtype=torch.float16).to(device),
+                        "encoder_hidden_states": torch.randn((batch_size, 512, 4096), dtype=torch.float16).to(device),
+                        "pooled_projections": torch.randn((batch_size, 768), dtype=torch.float16).to(device),
+                        "timestep": torch.tensor([1.0, 1.0], dtype=torch.float16).to(device),
+                        "txt_ids": torch.randn((512, 3), dtype=torch.float16).to(device),
+                        "img_ids": torch.randn((4096, 3), dtype=torch.float16).to(device),
+                        "guidance": torch.tensor([1.0, 1.0], dtype=torch.float32).to(device),
+                        "joint_attention_kwargs": {},
+                        "return_dict": False,
+                    }
+                    
+                    logger.info("Exporting model with torch.export...")
+                    # 导出模型
+                    ep = _export(
+                        transformer,
+                        args=(),
+                        kwargs=dummy_inputs,
+                        dynamic_shapes=dynamic_shapes,
+                        strict=False,
+                        allow_complex_guards_as_runtime_asserts=True,
+                    )
+                    
+                    logger.info("Compiling with TensorRT...")
+                    # 使用TensorRT编译
+                    trt_gm = torch_tensorrt.dynamo.compile(
+                        ep,
+                        inputs=dummy_inputs,
+                        enabled_precisions={torch.float32},
+                        truncate_double=True,
+                        min_block_size=1,
+                        use_fp32_acc=True,
+                        use_explicit_typing=True,
+                    )
+                    
+                    # 清理内存
+                    import gc
+                    del ep
+                    gc.collect()
+                    torch.cuda.empty_cache()
+                    
+                    # 保留config属性
+                    if config is not None:
+                        trt_gm.config = config
+                        
+                    # 使用编译后的模型
+                    optimized_transformer_forward = trt_gm
+
+
+
                 setattr(transformer, "forward", optimized_transformer_forward)
             else:
                 raise AttributeError(

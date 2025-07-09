@@ -59,6 +59,7 @@ class RuntimeConfig:
     use_profiler: bool = False
     use_torch_compile: bool = False
     use_onediff: bool = False
+    use_tensorrt: bool = False
     use_fp8_t5_encoder: bool = False
     use_teacache: bool = False
     use_fbcache: bool = False

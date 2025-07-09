@@ -22,10 +22,13 @@ def main():
     parser = FlexibleArgumentParser(description="xFuser Arguments")
     args = xFuserArgs.add_cli_args(parser).parse_args()
     engine_args = xFuserArgs.from_cli_args(args)
+    print("-"*10)
+    print(engine_args)
+    print("-"*10)
     engine_config, input_config = engine_args.create_config()
-    engine_config.runtime_config.dtype = torch.bfloat16
+    engine_config.runtime_config.dtype = torch.bfloat16   # 修改了 torch.bfloat16
     local_rank = get_world_group().local_rank
-    text_encoder_2 = T5EncoderModel.from_pretrained(engine_config.model_config.model, subfolder="text_encoder_2", torch_dtype=torch.bfloat16)
+    text_encoder_2 = T5EncoderModel.from_pretrained(engine_config.model_config.model, subfolder="text_encoder_2", torch_dtype=torch.bfloat16) #torch.bfloat16
 
     if args.use_fp8_t5_encoder:
         from optimum.quanto import freeze, qfloat8, quantize
@@ -45,7 +48,7 @@ def main():
         pretrained_model_name_or_path=engine_config.model_config.model,
         engine_config=engine_config,
         cache_args=cache_args,
-        torch_dtype=torch.bfloat16,
+        torch_dtype=torch.bfloat16,  # torch.bfloat16
         text_encoder_2=text_encoder_2,
     )
 

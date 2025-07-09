@@ -10,7 +10,7 @@ declare -A MODEL_CONFIGS=(
     ["Pixart-alpha"]="pixartalpha_example.py /cfs/dit/PixArt-XL-2-1024-MS 20"
     ["Pixart-sigma"]="pixartsigma_example.py /cfs/dit/PixArt-Sigma-XL-2-2K-MS 20"
     ["Sd3"]="sd3_example.py /cfs/dit/stable-diffusion-3-medium-diffusers 20"
-    ["Flux"]="flux_example.py /cfs/dit/FLUX.1-dev/ 28"
+    ["Flux"]="flux_example.py /root/models/FLUX.1-dev 28"
     ["HunyuanDiT"]="hunyuandit_example.py /cfs/dit/HunyuanDiT-v1.2-Diffusers 50"
     ["SDXL"]="sdxl_example.py /cfs/dit/stable-diffusion-xl-base-1.0 30"
 )
@@ -33,8 +33,8 @@ TASK_ARGS="--height 1024 --width 1024 --no_use_resolution_binning --guidance_sca
 # CACHE_ARGS="--use_fbcache"
 
 # On 8 gpus, pp=2, ulysses=2, ring=1, cfg_parallel=2 (split batch)
-N_GPUS=8
-PARALLEL_ARGS="--pipefusion_parallel_degree 2 --ulysses_degree 2 --ring_degree 2"
+N_GPUS=1
+PARALLEL_ARGS="--pipefusion_parallel_degree 1 --ulysses_degree 1 --ring_degree 1"
 
 # CFG_ARGS="--use_cfg_parallel"
 
@@ -47,7 +47,9 @@ PARALLEL_ARGS="--pipefusion_parallel_degree 2 --ulysses_degree 2 --ring_degree 2
 # PARALLLEL_VAE="--use_parallel_vae"
 
 # Another compile option is `--use_onediff` which will use onediff's compiler.
+# COMPILE_FLAG="--use_onediff"
 # COMPILE_FLAG="--use_torch_compile"
+# COMPILE_FLAG="--use_tensorrt"
 
 
 # Use this flag to quantize the T5 text encoder, which could reduce the memory usage and have no effect on the result quality.
