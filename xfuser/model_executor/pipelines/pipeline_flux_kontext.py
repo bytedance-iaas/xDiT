@@ -626,9 +626,6 @@ def parallelize_transformer(pipe: DiffusionPipeline):
         img_ids = torch.chunk(img_ids, get_sequence_parallel_world_size(), dim=-2)[get_sequence_parallel_rank()]
         txt_ids = torch.chunk(txt_ids, get_sequence_parallel_world_size(), dim=-2)[get_sequence_parallel_rank()]
 
-        for block in transformer.transformer_blocks + transformer.single_transformer_blocks:
-            block.attn.processor = xFuserFluxAttnProcessor2_0()
-
         output = original_forward(
             hidden_states,
             encoder_hidden_states,
