@@ -4,6 +4,7 @@ adapted from https://github.com/chengzeyi/ParaAttention.git
 """
 import functools
 import unittest
+from types import MethodType
 
 import torch
 from torch import nn
@@ -48,6 +49,8 @@ def apply_cache_on_transformer(
 
     original_forward = transformer.forward
 
+    object.__setattr__(transformer, '_custom_cached_transformer_blocks', cached_transformer_blocks)
+
     @functools.wraps(original_forward)
     def new_forward(
         self,
@@ -57,7 +60,7 @@ def apply_cache_on_transformer(
         with unittest.mock.patch.object(
             self,
             "transformer_blocks",
-            cached_transformer_blocks,
+            self._custom_cached_transformer_blocks,
         ), unittest.mock.patch.object(
             self,
             "single_transformer_blocks",
@@ -68,7 +71,12 @@ def apply_cache_on_transformer(
                 **kwargs,
             )
 
+    def clear_cache_modulated_inputs(self):
+        for block in self._custom_cached_transformer_blocks:
+            block.cache_context.modulated_inputs = None
+
+    transformer.clear_cache_modulated_inputs = MethodType(clear_cache_modulated_inputs, transformer)
+
     transformer.forward = new_forward.__get__(transformer)
 
     return transformer
-

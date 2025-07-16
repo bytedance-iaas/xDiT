@@ -3,6 +3,7 @@ from .pipeline_pixart_alpha import xFuserPixArtAlphaPipeline
 from .pipeline_pixart_sigma import xFuserPixArtSigmaPipeline
 from .pipeline_stable_diffusion_3 import xFuserStableDiffusion3Pipeline
 from .pipeline_flux import xFuserFluxPipeline
+from .pipeline_flux_kontext import xFuserFluxKontextPipeline
 from .pipeline_latte import xFuserLattePipeline
 from .pipeline_cogvideox import xFuserCogVideoXPipeline
 from .pipeline_consisid import xFuserConsisIDPipeline
@@ -15,6 +16,7 @@ __all__ = [
     "xFuserPixArtSigmaPipeline",
     "xFuserStableDiffusion3Pipeline",
     "xFuserFluxPipeline",
+    "xFuserFluxKontextPipeline",
     "xFuserLattePipeline",
     "xFuserHunyuanDiTPipeline",
     "xFuserCogVideoXPipeline",

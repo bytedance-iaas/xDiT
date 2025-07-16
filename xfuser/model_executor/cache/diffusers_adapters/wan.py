@@ -48,25 +48,6 @@ def apply_cache_on_transformer(
             transformer=transformer,
         )
     ])
-    #blocks = torch.nn.ModuleList(
-    #    [
-    #        utils.FBCachedWanTransformerBlocks(
-    #            transformer.blocks,
-    #            transformer=transformer,
-    #            return_hidden_states_only=True,
-    #        )
-    #    ]
-    #)
-
-    #blocks = torch.nn.ModuleList(
-    #    [
-    #        utils.TeaCachedWanTransformerBlocks(
-    #            transformer.blocks,
-    #            transformer=transformer,
-    #            return_hidden_states_only=True,
-    #        )
-    #    ]
-    #)
 
     original_forward = transformer.forward
 
