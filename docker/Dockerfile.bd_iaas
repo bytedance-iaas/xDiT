@@ -10,6 +10,7 @@ ARG FLASH_ATTN_VERSION="v2.8.0.post2"
 ARG FLASH_ATTN_WHEEL_NAME="flash_attn-2.8.0.post2+cu12torch2.7cxx11abiFALSE-cp310-cp310-linux_x86_64.whl"
 
 ARG FLA3_COMMIT="b443207c1fc4c98e4532aad4e88cfee1d590d996"
+ARG DIFFUSERS_COMMIT="9c13f8657986e68f5f05987912c54432fd28d86f"
 ARG SAGE_ATTN_BRANCH="iaas_main"
 
 # output is the xfuser wheel built by build_scm.sh, early check
@@ -76,6 +77,12 @@ RUN cd /app && \
     git clone https://github.com/bytedance-iaas/xDiT.git && \
     cd xDiT && \
     git checkout ${XDIT_BRANCH}
+
+Run cd /app && \
+    git clone https://github.com/huggingface/diffusers.git && \
+    cd diffusers && \
+    git checkout ${DIFFUSERS_COMMIT} && \
+    pip install -e . --no-deps
 
 RUN pip install torch==2.7.0 torch-utils packaging torchvision torch_tensorrt yunchang==0.6.3.post1 && \
     pip uninstall -y opencv-python
