@@ -11,6 +11,7 @@ ARG FLASH_ATTN_WHEEL_NAME="flash_attn-2.8.0.post2+cu12torch2.7cxx11abiFALSE-cp31
 
 ARG FLA3_COMMIT="b443207c1fc4c98e4532aad4e88cfee1d590d996"
 ARG DIFFUSERS_COMMIT="9c13f8657986e68f5f05987912c54432fd28d86f"
+ARG NUNCHAKU_COMMIT="e419dc299a846f62c752ff37ce81249111ff585a"
 ARG SAGE_ATTN_BRANCH="iaas_main"
 
 # output is the xfuser wheel built by build_scm.sh, early check
@@ -62,6 +63,7 @@ RUN git clone https://github.com/bytedance-iaas/SageAttention.git && \
 
 RUN git clone https://github.com/mit-han-lab/nunchaku.git --recursive && \
 	cd nunchaku && \
+	git checkout ${NUNCHAKU_COMMIT} && \
 	NUNCHAKU_INSTALL_MODE=ALL python3 setup.py develop
 
 # Copy the entire comfyui-xdit directory into the container
