@@ -10,6 +10,7 @@ from .pipeline_consisid import xFuserConsisIDPipeline
 from .pipeline_hunyuandit import xFuserHunyuanDiTPipeline
 from .pipeline_stable_diffusion_xl import xFuserStableDiffusionXLPipeline
 from .pipeline_wan import xFuserWanPipeline
+from .pipeline_wan_i2v import xFuserWanImageToVideoPipeline
 __all__ = [
     "xFuserPipelineBaseWrapper",
     "xFuserPixArtAlphaPipeline",
@@ -23,4 +24,5 @@ __all__ = [
     "xFuserConsisIDPipeline",
     "xFuserStableDiffusionXLPipeline",
     "xFuserWanPipeline",
+    "xFuserWanImageToVideoPipeline",
 ]

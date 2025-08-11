@@ -564,7 +564,7 @@ class FBCachedWanTransformerBlocks(torch.nn.Module):
 
         mark_step_begin()
         #使能位置可调整
-        if get_current_step() < 6 or get_current_step() >= get_num_inference_steps():
+        if get_current_step() < 6:
             can_use_cache = False
         else:
             can_use_cache = self.get_can_use_cache(

@@ -1,5 +1,5 @@
 import inspect
-from typing import Optional
+from typing import Optional, Any, Dict, Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -127,6 +127,73 @@ class xFuserAttentionWrapper(xFuserAttentionBaseWrapper):
     def __init__(
         self,
         attention: Attention,
+        latte_temporal_attention: bool = False,
+    ):
+        super().__init__(attention=attention)
+        self.processor = xFuserAttentionProcessorRegister.get_processor(
+            attention.processor
+        )()
+        self.latte_temporal_attention = latte_temporal_attention
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        **cross_attention_kwargs,
+    ) -> torch.Tensor:
+        r"""
+        The forward method of the `Attention` class.
+
+        Args:
+            hidden_states (`torch.Tensor`):
+                The hidden states of the query.
+            encoder_hidden_states (`torch.Tensor`, *optional*):
+                The hidden states of the encoder.
+            attention_mask (`torch.Tensor`, *optional*):
+                The attention mask to use. If `None`, no mask is applied.
+            **cross_attention_kwargs:
+                Additional keyword arguments to pass along to the cross attention.
+
+        Returns:
+            `torch.Tensor`: The output of the attention layer.
+        """
+        # The `Attention` class can call different attention processors / attention functions
+        # here we simply pass along all tensors to the selected processor class
+        # For standard processors that are defined here, `**cross_attention_kwargs` is empty
+        attn_parameters = set(
+            inspect.signature(self.processor.__call__).parameters.keys()
+        )
+        quiet_attn_parameters = {"ip_adapter_masks"}
+        unused_kwargs = [
+            k
+            for k, _ in cross_attention_kwargs.items()
+            if k not in attn_parameters and k not in quiet_attn_parameters
+        ]
+        if len(unused_kwargs) > 0:
+            logger.warning(
+                f"cross_attention_kwargs {unused_kwargs} are not expected by {self.processor.__class__.__name__} and will be ignored."
+            )
+        cross_attention_kwargs = {
+            k: w for k, w in cross_attention_kwargs.items() if k in attn_parameters
+        }
+
+        return self.processor(
+            self,
+            hidden_states,
+            encoder_hidden_states=encoder_hidden_states,
+            attention_mask=attention_mask,
+            latte_temporal_attention=self.latte_temporal_attention,
+            **cross_attention_kwargs,
+        )
+
+
+from diffusers.models.transformers.transformer_flux import FluxAttention
+@xFuserLayerWrappersRegister.register(FluxAttention)
+class xFuserAttentionWrapper(xFuserAttentionBaseWrapper):
+    def __init__(
+        self,
+        attention: FluxAttention,
         latte_temporal_attention: bool = False,
     ):
         super().__init__(attention=attention)
@@ -630,8 +697,9 @@ class xFuserJointAttnProcessor2_0(JointAttnProcessor2_0):
             return hidden_states
 
 
-@xFuserAttentionProcessorRegister.register(FluxAttnProcessor2_0)
-class xFuserFluxAttnProcessor2_0(FluxAttnProcessor2_0):
+from diffusers.models.transformers.transformer_flux import FluxAttnProcessor
+@xFuserAttentionProcessorRegister.register(FluxAttnProcessor)
+class xFuserFluxAttnProcessor2_0(FluxAttnProcessor):
     """Attention processor used typically in processing the SD3-like self-attention projections."""
 
     def __init__(self):
@@ -1598,9 +1666,15 @@ if HunyuanVideoAttnProcessor2_0 is not None:
 else:
     xFuserHunyuanVideoAttnProcessor2_0 = None
 
-from diffusers.models.transformers.transformer_wan import WanAttnProcessor2_0
-@xFuserAttentionProcessorRegister.register(WanAttnProcessor2_0)
-class xFuserWanAttnProcessor2_0(WanAttnProcessor2_0):
+from diffusers.models.transformers.transformer_wan import (
+    WanAttnProcessor,
+    _get_qkv_projections,
+    WanAttention,
+    _get_added_kv_projections,
+)
+from diffusers.models.attention_dispatch import dispatch_attention_fn
+@xFuserAttentionProcessorRegister.register(WanAttnProcessor)
+class xFuserWanAttnProcessor2_0(WanAttnProcessor):
     def __init__(self):
         super().__init__()
         from xfuser.core.long_ctx_attention import (
@@ -1620,90 +1694,87 @@ class xFuserWanAttnProcessor2_0(WanAttnProcessor2_0):
     @torch_compile_disable_if_v100
     def __call__(
         self,
-        attn: Attention,
+        attn: "WanAttention",
         hidden_states: torch.Tensor,
         encoder_hidden_states: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
-        rotary_emb: Optional[torch.Tensor] = None,
+        rotary_emb: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> torch.Tensor:
         encoder_hidden_states_img = None
-
         if attn.add_k_proj is not None:
             # 512 is the context length of the text encoder, hardcoded for now
             image_context_length = encoder_hidden_states.shape[1] - 512
             encoder_hidden_states_img = encoder_hidden_states[:, :image_context_length]
             encoder_hidden_states = encoder_hidden_states[:, image_context_length:]
-        if encoder_hidden_states is None:
-            encoder_hidden_states = hidden_states
 
-        query = attn.to_q(hidden_states)
-        key = attn.to_k(encoder_hidden_states)
-        value = attn.to_v(encoder_hidden_states)
+        query, key, value = _get_qkv_projections(attn, hidden_states, encoder_hidden_states)
 
-        if attn.norm_q is not None:
-            query = attn.norm_q(query)
-        if attn.norm_k is not None:
-            key = attn.norm_k(key)
+        query = attn.norm_q(query)
+        key = attn.norm_k(key)
 
-        query = query.unflatten(2, (attn.heads, -1)).transpose(1, 2)
-        key = key.unflatten(2, (attn.heads, -1)).transpose(1, 2)
-        value = value.unflatten(2, (attn.heads, -1)).transpose(1, 2)
+        query = query.unflatten(2, (attn.heads, -1))
+        key = key.unflatten(2, (attn.heads, -1))
+        value = value.unflatten(2, (attn.heads, -1))
 
         if rotary_emb is not None:
-            if isinstance(rotary_emb, tuple):
-                def apply_rotary_emb(
-                        hidden_states: torch.Tensor,
-                        freqs_cos: torch.Tensor,
-                        freqs_sin: torch.Tensor,
-                ):
-                    x = hidden_states.view(*hidden_states.shape[:-1], -1, 2)
-                    x1, x2 = x[..., 0], x[..., 1]
-                    cos = freqs_cos[..., 0::2]
-                    sin = freqs_sin[..., 1::2]
-                    out = torch.empty_like(hidden_states)
-                    out[..., 0::2] = x1 * cos - x2 * sin
-                    out[..., 1::2] = x1 * sin + x2 * cos
-                    return out.type_as(hidden_states)
-                query = apply_rotary_emb(query, *rotary_emb)
-                key = apply_rotary_emb(key, *rotary_emb)
-            else:
-                def apply_rotary_emb(
-                        hidden_states: torch.Tensor,
-                        freqs: torch.Tensor
-                ):
-                    dtype = torch.float32 if hidden_states.device.type == "mps" else torch.float64
-                    x_rotated = torch.view_as_complex(hidden_states.to(dtype).unflatten(3, (-1, 2)))
-                    x_out = torch.view_as_real(x_rotated * freqs).flatten(3, 4)
-                    return x_out.type_as(hidden_states)
+            def apply_rotary_emb(
+                    hidden_states: torch.Tensor,
+                    freqs_cos: torch.Tensor,
+                    freqs_sin: torch.Tensor,
+            ):
+                x1, x2 = hidden_states.unflatten(-1, (-1, 2)).unbind(-1)
+                cos = freqs_cos[..., 0::2]
+                sin = freqs_sin[..., 1::2]
+                out = torch.empty_like(hidden_states)
+                out[..., 0::2] = x1 * cos - x2 * sin
+                out[..., 1::2] = x1 * sin + x2 * cos
+                return out.type_as(hidden_states)
 
-                query = apply_rotary_emb(query, rotary_emb)
-                key = apply_rotary_emb(key, rotary_emb)
+            query = apply_rotary_emb(query, *rotary_emb)
+            key = apply_rotary_emb(key, *rotary_emb)
 
         # I2V task
         hidden_states_img = None
         if encoder_hidden_states_img is not None:
-            key_img = attn.add_k_proj(encoder_hidden_states_img)
+            key_img, value_img = _get_added_kv_projections(attn, encoder_hidden_states_img)
             key_img = attn.norm_added_k(key_img)
-            value_img = attn.add_v_proj(encoder_hidden_states_img)
 
-            key_img = key_img.unflatten(2, (attn.heads, -1)).transpose(1, 2)
-            value_img = value_img.unflatten(2, (attn.heads, -1)).transpose(1, 2)
+            key_img = key_img.unflatten(2, (attn.heads, -1))
+            value_img = value_img.unflatten(2, (attn.heads, -1))
 
-            hidden_states_img = F.scaled_dot_product_attention(
-                query, key_img, value_img, attn_mask=None, dropout_p=0.0, is_causal=False
+            # hidden_states_img = dispatch_attention_fn(
+            #     query,
+            #     key_img,
+            #     value_img,
+            #     attn_mask=None,
+            #     dropout_p=0.0,
+            #     is_causal=False,
+            #     backend=self._attention_backend,
+            # )
+            # hidden_states_img = hidden_states_img.flatten(2, 3)
+            hidden_states = self.hybrid_seq_parallel_attn(
+                None,
+                query,
+                key_img,
+                value_img,
+                dropout_p=0.0,
+                causal=False,
             )
-            hidden_states_img = hidden_states_img.transpose(1, 2).flatten(2, 3)
+            hidden_states_img = hidden_states.flatten(2, 3)
+
             hidden_states_img = hidden_states_img.type_as(query)
 
-        #hidden_states = F.scaled_dot_product_attention(
-        #    query, key, value, attn_mask=attention_mask, dropout_p=0.0, is_causal=False
-        #)
-        #hidden_states = hidden_states.transpose(1, 2).flatten(2, 3)
-        #! ---------------------------------------- ATTENTION ----------------------------------------
-        query = query.transpose(1, 2)  #[2, 40, 2250, 128] bf16
-        key = key.transpose(1, 2)
-        value = value.transpose(1, 2)
-        #输入要求(bs, seq_len/N, head_cnt, head_size)
+        # hidden_states = dispatch_attention_fn(
+        #     query,
+        #     key,
+        #     value,
+        #     attn_mask=attention_mask,
+        #     dropout_p=0.0,
+        #     is_causal=False,
+        #     backend=self._attention_backend,
+        # )
+        # hidden_states = hidden_states.flatten(2, 3)
+
         hidden_states = self.hybrid_seq_parallel_attn(
             None,
             query,
@@ -1713,6 +1784,7 @@ class xFuserWanAttnProcessor2_0(WanAttnProcessor2_0):
             causal=False,
         )
         hidden_states = hidden_states.flatten(2, 3)
+
         hidden_states = hidden_states.type_as(query)
         if hidden_states_img is not None:
             hidden_states = hidden_states + hidden_states_img

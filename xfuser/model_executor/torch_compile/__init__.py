@@ -1,0 +1,3 @@
+from .dynamic_shape_patch import apply_torch_compile_dynamic_shape_monkey_patch, restore_torch_compile_dynamic_shape_monkey_patch
+
+__all__ = ["apply_torch_compile_dynamic_shape_monkey_patch", "restore_torch_compile_dynamic_shape_monkey_patch"]

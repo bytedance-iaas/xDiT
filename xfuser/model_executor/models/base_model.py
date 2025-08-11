@@ -69,7 +69,6 @@ class xFuserModelBaseWrapper(nn.Module, xFuserBaseWrapper, metaclass=ABCMeta):
         for name, module in model.named_modules():
             if isinstance(module, xFuserLayerBaseWrapper):
                 continue
-
             for subname, submodule in module.named_children():
                 need_wrap = subname in submodule_name_to_wrap
                 for class_to_wrap in submodule_classes_to_wrap:
