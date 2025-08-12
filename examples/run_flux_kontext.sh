@@ -11,8 +11,8 @@ TASK_ARGS="--height 1024 --width 1024 --no_use_resolution_binning"
 CACHE_ARGS="--use_fbcache"
 
 # On 8 gpus, pp=2, ulysses=2, ring=1, cfg_parallel=2 (split batch)
-N_GPUS=1
-PARALLEL_ARGS="--ulysses_degree 1 --ring_degree 1"
+N_GPUS=8
+PARALLEL_ARGS="--ulysses_degree 8 --ring_degree 1"
 INFERENCE_STEP=28
 # CFG_ARGS="--use_cfg_parallel"
 
@@ -32,7 +32,7 @@ INFERENCE_STEP=28
 # QUANTIZE_FLAG="--use_fp8_t5_encoder"
 
 # SVDQuant flag
-SVDQ_FLAG="--use_svdq --svdq_quantized_model_path /data00/models/nunchaku-flux.1-kontext-dev/svdq-int4_r32-flux.1-kontext-dev.safetensors"
+# SVDQ_FLAG="--use_svdq --svdq_quantized_model_path /data00/models/nunchaku-flux.1-kontext-dev/svdq-int4_r32-flux.1-kontext-dev.safetensors"
 
 # export CUDA_VISIBLE_DEVICES=4,5,6,7
 

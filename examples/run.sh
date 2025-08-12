@@ -54,7 +54,7 @@ PARALLEL_ARGS="--pipefusion_parallel_degree 2 --ulysses_degree 2 --ring_degree 2
 # QUANTIZE_FLAG="--use_fp8_t5_encoder"
 
 # SVDQuant flag
-SVDQ_FLAG="--use_svdq --svdq_quantized_model_path /path/to/nunchaku-flux.1-dev/svdq-int4_r32-flux.1-dev.safetensors"
+# SVDQ_FLAG="--use_svdq --svdq_quantized_model_path /path/to/nunchaku-flux.1-dev/svdq-int4_r32-flux.1-dev.safetensors"
 
 # export CUDA_VISIBLE_DEVICES=4,5,6,7
 

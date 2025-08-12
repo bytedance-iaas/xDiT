@@ -5,11 +5,13 @@ import torch.distributed as dist
 import logging
 import time
 import torch
+import numpy as np
 import torch.distributed
+from diffusers.utils import load_image
 from diffusers import AutoModel, DiffusionPipeline, AutoencoderKLWan
 from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
-from xfuser import xFuserArgs, xFuserWanPipeline
-from xfuser.model_executor.pipelines.pipeline_wan import parallelize_transformer
+from xfuser import xFuserArgs, xFuserWanImageToVideoPipeline
+from xfuser.model_executor.pipelines.pipeline_wan_i2v import parallelize_transformer
 from xfuser.config import FlexibleArgumentParser
 from xfuser.core.distributed import (
     is_dp_last_group,
@@ -19,7 +21,7 @@ from xfuser.core.distributed import (
 )
 from diffusers.utils import export_to_video
 from transformers import UMT5EncoderModel
-
+from transformers import CLIPVisionModel
 from xfuser.model_executor.layers.attention_processor import xFuserWanAttnProcessor2_0
 from xfuser.model_executor.cache.diffusers_adapters.wan import apply_cache_on_pipe
 from xfuser.logger import init_logger
@@ -60,20 +62,22 @@ def main():
         setattr(xFuserWanAttnProcessor2_0, "enable_fa3", False)
 
     assert engine_args.pipefusion_parallel_degree == 1, "This script does not support PipeFusion."
-    assert engine_args.use_parallel_vae is False, "parallel VAE not implemented for Wan2.1"
+    # assert engine_args.use_parallel_vae is False, "parallel VAE not implemented for Wan2.1"
 
     start_time = time.time()
     text_encoder = UMT5EncoderModel.from_pretrained(engine_config.model_config.model, subfolder="text_encoder", torch_dtype=torch.bfloat16)
     vae = AutoencoderKLWan.from_pretrained(engine_config.model_config.model, subfolder="vae", torch_dtype=torch.float32)
     transformer = AutoModel.from_pretrained(engine_config.model_config.model, subfolder="transformer", torch_dtype=torch.bfloat16)
+    image_encoder = CLIPVisionModel.from_pretrained(engine_config.model_config.model, subfolder="image_encoder", torch_dtype=torch.float32)
     load_elapsed = time.time() - start_time
     logger.info(f"loading checkpoint elapsed: {load_elapsed:.2f}")
 
-    pipe = xFuserWanPipeline.from_pretrained(
+    pipe = xFuserWanImageToVideoPipeline.from_pretrained(
         pretrained_model_name_or_path=engine_config.model_config.model,
         transformer=transformer,
         vae=vae,
         text_encoder=text_encoder,
+        image_encoder=image_encoder,
         engine_config=engine_config,
         torch_dtype=torch.bfloat16,
     )
@@ -115,11 +119,38 @@ def main():
             use_cache="Fb"
         apply_cache_on_pipe(pipe=pipe, use_cache=use_cache, residual_diff_threshold=args.cache_threshold)
 
+    image = load_image("/data00/flux_dev_example.png")
+    max_area = input_config.height * input_config.width
+    aspect_ratio = image.height / image.width
+    mod_value = pipe.vae_scale_factor_spatial * pipe.transformer.config.patch_size[1]
+    height = round(np.sqrt(max_area * aspect_ratio)) // mod_value * mod_value
+    width = round(np.sqrt(max_area / aspect_ratio)) // mod_value * mod_value
+    logger.info(f"resize image to {width} x {height}")
+    image = image.resize((width, height))
+
     if engine_config.runtime_config.use_torch_compile:
         torch._inductor.config.reorder_for_compute_comm_overlap = True
-        pipe.transformer = torch.compile(pipe.transformer,
-            mode="max-autotune-no-cudagraphs")
+        from xfuser.model_executor.torch_compile import apply_torch_compile_dynamic_shape_monkey_patch
+        apply_torch_compile_dynamic_shape_monkey_patch()
+        components = {
+            'vae': pipe.vae,
+            'transformer': pipe.transformer,
+        }
+        for name, component in components.items():
+            if component is not None:
+                if hasattr(component, 'forward'):
+                    optimized_forward = torch.compile(
+                        component.forward,
+                        mode="max-autotune-no-cudagraphs",
+                        dynamic=True,
+                    )
+                    setattr(component, 'forward', optimized_forward)
+                    print(f"Finish compiling the {name.replace('_', ' ').title()} forward function")
+            else:
+                print(f"Skip compiling the {name.replace('_', ' ').title()}")
+
         output = pipe(
+            image=image,
             height=input_config.height,
             width=input_config.width,
             num_frames=input_config.num_frames,
@@ -130,9 +161,11 @@ def main():
             generator=torch.Generator(device="cuda").manual_seed(input_config.seed),
         ).frames[0]
 
+
     torch.cuda.reset_peak_memory_stats()
     start_time = time.time()
     output = pipe(
+        image=image,
         height=input_config.height,
         width=input_config.width,
         num_frames=input_config.num_frames,

@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Any, Union
+from typing import Any, Dict, Optional, Tuple, Union
 import torch
 import torch.distributed
 import torch.nn as nn
@@ -29,6 +29,7 @@ from xfuser.model_executor.models.transformers.base_transformer import (
 
 logger = init_logger(__name__)
 from diffusers.models.attention import FeedForward
+from diffusers.utils import USE_PEFT_BACKEND, deprecate, logging, scale_lora_layers, unscale_lora_layers
 
 
 @xFuserTransformerWrappersRegister.register(FluxTransformer2DModel)
@@ -45,6 +46,7 @@ class xFuserFluxTransformer2DWrapper(xFuserTransformerBaseWrapper):
             submodule_name_to_wrap=["attn"],
             transformer_blocks_name=["transformer_blocks", "single_transformer_blocks"],
         )
+
         self.encoder_hidden_states_cache = [
             None for _ in range(len(self.transformer_blocks))
         ]
