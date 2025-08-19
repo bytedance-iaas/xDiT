@@ -1,5 +1,6 @@
 # Use the NVIDIA PyTorch base image
-FROM iaas-gpu-cn-beijing.cr.volces.com/nvcr.io/nvidia/pytorch:24.07-py3
+# 使用hub缓存的pytorch镜像加速编译过程
+FROM hub.byted.org/iaas/pytorch:24.07-py3
 
 ARG XFUSER_PYPI="https://scqq9isgq31i0fb8nt4eg.apigateway-cn-beijing.volceapi.com/simple/"
 ARG BYTED_PIP_INDEX="https://mirrors.byted.org/pypi/simple"
@@ -17,6 +18,7 @@ ARG SAGE_ATTN_BRANCH="iaas_main"
 # output is the xfuser wheel built by build_scm.sh, early check
 COPY ./output ./output
 
+# 使用字节内场源
 RUN sed -i 's/archive.ubuntu.com/mirrors.byted.org/g' /etc/apt/sources.list && \
     sed -i 's/security.ubuntu.com/mirrors.byted.org/g' /etc/apt/sources.list && \
     wget -qO - https://mirrors.byted.org/nvidia_all/ubuntu2204/x86_64/3bf863cc.pub | gpg --dearmor -o /etc/apt/trusted.gpg.d/nvidia.gpg && \
