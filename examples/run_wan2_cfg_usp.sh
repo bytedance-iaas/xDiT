@@ -5,7 +5,8 @@ export PYTHONPATH=$PWD:$PYTHONPATH
 
 # Wan2.1 configuration
 SCRIPT="wan2_cfg_usp_example.py"
-MODEL_ID="/data00/models/Wan2.1-T2V-14B-Diffusers/"
+#MODEL_ID="/data00/models/Wan2.1-T2V-14B-Diffusers/"
+MODEL_ID="/data00/models/Wan2.2-T2V-A14B-Diffusers"
 INFERENCE_STEP=50
 
 mkdir -p ./results
@@ -19,7 +20,7 @@ CFG_ARGS="--use_cfg_parallel"
 # Uncomment and modify these as needed
 # PIPEFUSION_ARGS="--num_pipeline_patch 8"
 # OUTPUT_ARGS="--output_type latent"
-# PARALLLEL_VAE="--use_parallel_vae"
+PARALLLEL_VAE="--use_parallel_vae"
 # ENABLE_TILING="--enable_tiling"
 # COMPILE_FLAG="--use_torch_compile"
 

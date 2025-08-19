@@ -90,6 +90,7 @@ RUN pip install torch==2.7.0 torch-utils packaging torchvision torch_tensorrt yu
     pip uninstall -y opencv-python
 
 RUN pip install ray
+RUN pip install torchao==0.12.0
 
 RUN find / -name "pip.conf" -exec rm -rf {} \; && \
     echo "[global]" > /etc/pip.conf && \

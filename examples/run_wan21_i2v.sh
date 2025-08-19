@@ -6,13 +6,14 @@ export PYTHONPATH=$PWD:$PYTHONPATH
 # Wan2.1 configuration
 SCRIPT="wan21_i2v_example.py"
 MODEL_ID="/data00/models/Wan2.1-I2V-14B-720P-Diffusers"
-
+# MODEL_ID="/data00/models/Wan2.2-I2V-A14B-Diffusers"
 INFERENCE_STEP=40
 
 mkdir -p ./results
 
 # Wan2.1 specific task args
-TASK_ARGS="--height 720 --width 1280 --num_frames 81 --seed 0 --enable_sage_attn --use_torch_compile --use_fbcache --cache_threshold 0.16"
+TASK_ARGS="--height 720 --width 1280 --num_frames 81 --seed 0 --use_torch_compile --enable_sage_attn --use_fbcache --cache_threshold 0.2"
+# "--enable_quantize"
 N_GPUS=8
 PARALLEL_ARGS="--ulysses_degree 4 --ring_degree 1"
 CFG_ARGS="--use_cfg_parallel"
@@ -20,7 +21,7 @@ CFG_ARGS="--use_cfg_parallel"
 # Uncomment and modify these as needed
 # PIPEFUSION_ARGS="--num_pipeline_patch 8"
 # OUTPUT_ARGS="--output_type latent"
-# PARALLLEL_VAE="--use_parallel_vae"
+PARALLLEL_VAE="--use_parallel_vae"
 # ENABLE_TILING="--enable_tiling"
 # COMPILE_FLAG="--use_torch_compile"
 
@@ -32,7 +33,7 @@ $PIPEFUSION_ARGS \
 $OUTPUT_ARGS \
 --num_inference_steps $INFERENCE_STEP \
 --warmup_steps 0 \
---prompt "a cute anime girl with massive fennec ears and a big fluffy tail wearing a maid outfit turning around" \
+--prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the felines intricate details and the refreshing atmosphere of the seaside." \
 $CFG_ARGS \
 $PARALLLEL_VAE \
 $ENABLE_TILING \

@@ -12,7 +12,8 @@ from xfuser.logger import init_logger
 logger = init_logger(__name__)
 from fastapi import FastAPI, HTTPException
 from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
-
+from diffusers import AutoModel, DiffusionPipeline, AutoencoderKLWan
+from transformers import UMT5EncoderModel
 from pydantic import BaseModel
 from typing import Optional
 import argparse
@@ -96,6 +97,7 @@ class VideoGenerator:
         self.logger.info(f"model_name, {model_name}")
         pipeline_map = {
             "Wan2.1-T2V-14B-Diffusers": xFuserWanPipeline,
+            "Wan2.2-T2V-A14B-Diffusers": xFuserWanPipeline,
         }
 
         PipelineClass = pipeline_map.get(model_name)
@@ -104,11 +106,58 @@ class VideoGenerator:
 
         self.logger.info(f"Initializing model {model_name} from {xfuser_args.model}")
 
-        self.pipe = PipelineClass.from_pretrained(
-            pretrained_model_name_or_path=xfuser_args.model,
-            engine_config=self.engine_config,
-            torch_dtype=torch.bfloat16,
-        ).to("cuda")
+        text_encoder = UMT5EncoderModel.from_pretrained(self.engine_config.model_config.model, subfolder="text_encoder",
+                                                        torch_dtype=torch.bfloat16)
+        vae = AutoencoderKLWan.from_pretrained(self.engine_config.model_config.model, subfolder="vae",
+                                               torch_dtype=torch.float32)
+        transformer = AutoModel.from_pretrained(self.engine_config.model_config.model, subfolder="transformer",
+                                                torch_dtype=torch.bfloat16)
+        if "Wan2.2" in model_name:
+            transformer_2 = AutoModel.from_pretrained(self.engine_config.model_config.model, subfolder="transformer_2",
+                                                    torch_dtype=torch.bfloat16)
+        if xfuser_args.enable_quantize:
+            from torchao.quantization import quantize_, float8_weight_only, float8_dynamic_activation_float8_weight
+            logger.info(f"doing quantize")
+            quantize_(text_encoder, float8_weight_only())
+            quantize_(transformer, float8_weight_only())
+            if not xfuser_args.use_torch_compile:
+                transformer.enable_layerwise_casting(storage_dtype=torch.float8_e4m3fn, compute_dtype=torch.bfloat16)
+            if "Wan2.2" in model_name:
+                quantize_(transformer_2, float8_weight_only())
+                if not xfuser_args.use_torch_compile:
+                    transformer_2.enable_layerwise_casting(storage_dtype=torch.float8_e4m3fn, compute_dtype=torch.bfloat16)
+
+        if xfuser_args.enable_model_cpu_offload:
+            logger.info(f"doing cpu offloading")
+            from diffusers.hooks import apply_group_offloading
+            onload_device = torch.device("cuda")
+            offload_device = torch.device("cpu")
+            vae.enable_group_offload(onload_device=onload_device, offload_type="leaf_level")
+            # transformer.enable_group_offload(onload_device=onload_device, offload_device=offload_device,
+            #                                  offload_type="leaf_level")
+            if not xfuser_args.enable_quantize:
+                apply_group_offloading(text_encoder, onload_device=onload_device, offload_type="leaf_level")
+
+        if "Wan2.2" in model_name:
+            self.pipe = PipelineClass.from_pretrained(
+                pretrained_model_name_or_path=xfuser_args.model,
+                text_encoder=text_encoder,
+                vae=vae,
+                transformer=transformer,
+                transformer_2=transformer_2,
+                engine_config=self.engine_config,
+                torch_dtype=torch.bfloat16,
+            )
+        else:
+            self.pipe = PipelineClass.from_pretrained(
+                pretrained_model_name_or_path=xfuser_args.model,
+                text_encoder=text_encoder,
+                vae=vae,
+                transformer=transformer,
+                engine_config=self.engine_config,
+                torch_dtype=torch.bfloat16,
+            )
+        self.pipe.to("cuda")
 
         initialize_runtime_state(self.pipe, self.engine_config)
         if self.pipe.__class__.__name__.startswith("xFuserWan"):
@@ -135,8 +184,28 @@ class VideoGenerator:
                                     residual_diff_threshold=xfuser_args.cache_threshold)
 
         if xfuser_args.use_torch_compile:
-            self.pipe.transformer = torch.compile(self.pipe.transformer,
-                                                  mode="default")
+            from xfuser.model_executor.torch_compile import apply_torch_compile_dynamic_shape_monkey_patch
+            apply_torch_compile_dynamic_shape_monkey_patch()
+            components = {
+                'vae': self.pipe.vae,
+                'transformer': self.pipe.transformer,
+                'transformer_2': self.pipe.transformer_2,
+            }
+            for name, component in components.items():
+                if component is not None:
+                    if hasattr(self.pipe, name):
+                        if hasattr(component, 'forward'):
+                            optimized_forward = torch.compile(
+                                component.forward,
+                                mode="default",
+                                dynamic=True,
+                            )
+                            setattr(component, 'forward', optimized_forward)
+                            print(f"Finish compiling the {name.replace('_', ' ').title()} forward function")
+                    else:
+                        print(f"Skip compiling the {name.replace('_', ' ').title()}")
+                else:
+                    print(f"Skip compiling the {name.replace('_', ' ').title()}")
 
         get_runtime_state().set_video_input_parameters(
             height=self.input_config.height,
@@ -145,8 +214,17 @@ class VideoGenerator:
             num_inference_steps=self.input_config.num_inference_steps,
             split_text_embed_in_sp=get_pipeline_parallel_world_size() == 1,
         )
-
-        self.pipe.prepare_run(self.input_config, steps=1)
+        # warm up
+        output = self.pipe(
+            height=720,
+            width=1280,
+            num_frames=19,
+            prompt="Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage.",
+            negative_prompt="色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人 很多，倒着走",
+            num_inference_steps=30,
+            guidance_scale=5.0,
+            generator=torch.Generator(device="cuda").manual_seed(0),
+        ).frames[0]
         self.logger.info("Model initialization completed")
 
     def generate(self, request: GenerateRequest):
@@ -260,6 +338,9 @@ if __name__ == "__main__":
     parser.add_argument('--use_cfg_parallel', action='store_true', help='Whether to use CFG parallel')
     parser.add_argument('--use_torch_compile', action='store_true', help='Whether to use torch compile')
     parser.add_argument('--enable_sage_attn', action='store_true', help='Whether to enable sage attn')
+    parser.add_argument('--enable_quantize', action='store_true', help='Whether to quantize model')
+    parser.add_argument('--enable_model_cpu_offload', action='store_true', help='Whether to enable model cpu offload')
+    parser.add_argument('--use_parallel_vae', action='store_true', help='Whether to use parallel vae')
     parser.add_argument('--use_fbcache', action='store_true', help='Whether to use FBcache')
     parser.add_argument('--use_teacache', action='store_true', help='Whether to use Teacache')
     parser.add_argument('--cache_threshold', type=float, default=0.16, help='Threshold of teacache or fbcache')
@@ -272,6 +353,9 @@ if __name__ == "__main__":
         use_cfg_parallel=args.use_cfg_parallel,
         use_torch_compile=args.use_torch_compile,
         enable_sage_attn=args.enable_sage_attn,
+        enable_quantize=args.enable_quantize,
+        enable_model_cpu_offload=args.enable_model_cpu_offload,
+        use_parallel_vae=args.use_parallel_vae,
         use_fbcache=args.use_fbcache,
         use_teacache=args.use_teacache,
         cache_threshold=args.cache_threshold,
