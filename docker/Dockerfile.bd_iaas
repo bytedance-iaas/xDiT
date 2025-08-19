@@ -4,7 +4,7 @@ FROM iaas-gpu-cn-beijing.cr.volces.com/nvcr.io/nvidia/pytorch:24.07-py3
 ARG XFUSER_PYPI="https://scqq9isgq31i0fb8nt4eg.apigateway-cn-beijing.volceapi.com/simple/"
 ARG BYTED_PIP_INDEX="https://mirrors.byted.org/pypi/simple"
 ARG XFUSER_VERSION=""
-ARG XDIT_BRANCH="release_0.0.4"
+ARG XDIT_BRANCH="release_0.0.5"
 ARG WAN_BRANCH="release_0.0.4"
 ARG FLASH_ATTN_VERSION="v2.8.0.post2"
 ARG FLASH_ATTN_WHEEL_NAME="flash_attn-2.8.0.post2+cu12torch2.7cxx11abiFALSE-cp310-cp310-linux_x86_64.whl"
