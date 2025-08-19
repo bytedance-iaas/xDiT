@@ -62,25 +62,49 @@ def main():
         setattr(xFuserWanAttnProcessor2_0, "enable_fa3", False)
 
     assert engine_args.pipefusion_parallel_degree == 1, "This script does not support PipeFusion."
-    # assert engine_args.use_parallel_vae is False, "parallel VAE not implemented for Wan2.1"
 
     start_time = time.time()
     text_encoder = UMT5EncoderModel.from_pretrained(engine_config.model_config.model, subfolder="text_encoder", torch_dtype=torch.bfloat16)
     vae = AutoencoderKLWan.from_pretrained(engine_config.model_config.model, subfolder="vae", torch_dtype=torch.float32)
     transformer = AutoModel.from_pretrained(engine_config.model_config.model, subfolder="transformer", torch_dtype=torch.bfloat16)
-    image_encoder = CLIPVisionModel.from_pretrained(engine_config.model_config.model, subfolder="image_encoder", torch_dtype=torch.float32)
+    if "Wan2.1" in engine_config.model_config.model:
+        image_encoder = CLIPVisionModel.from_pretrained(engine_config.model_config.model, subfolder="image_encoder",
+                                                        torch_dtype=torch.float32)
+    elif "Wan2.2" in engine_config.model_config.model:
+        transformer_2 = AutoModel.from_pretrained(engine_config.model_config.model, subfolder="transformer_2",
+                                                  torch_dtype=torch.bfloat16)
+
     load_elapsed = time.time() - start_time
     logger.info(f"loading checkpoint elapsed: {load_elapsed:.2f}")
 
-    pipe = xFuserWanImageToVideoPipeline.from_pretrained(
-        pretrained_model_name_or_path=engine_config.model_config.model,
-        transformer=transformer,
-        vae=vae,
-        text_encoder=text_encoder,
-        image_encoder=image_encoder,
-        engine_config=engine_config,
-        torch_dtype=torch.bfloat16,
-    )
+    if engine_config.enable_quantize:
+        from torchao.quantization import quantize_, Float8WeightOnlyConfig, float8_weight_only
+        quantize_(text_encoder, float8_weight_only())
+        quantize_(transformer, Float8WeightOnlyConfig())
+        if "Wan2.2" in engine_config.model_config.model:
+            quantize_(transformer_2, Float8WeightOnlyConfig())
+
+    if "Wan2.1" in engine_config.model_config.model:
+        pipe = xFuserWanImageToVideoPipeline.from_pretrained(
+            pretrained_model_name_or_path=engine_config.model_config.model,
+            transformer=transformer,
+            vae=vae,
+            text_encoder=text_encoder,
+            image_encoder=image_encoder,
+            engine_config=engine_config,
+            torch_dtype=torch.bfloat16,
+        )
+    elif "Wan2.2" in engine_config.model_config.model:
+        pipe = xFuserWanImageToVideoPipeline.from_pretrained(
+            pretrained_model_name_or_path=engine_config.model_config.model,
+            transformer=transformer,
+            transformer_2=transformer_2,
+            vae=vae,
+            text_encoder=text_encoder,
+            engine_config=engine_config,
+            torch_dtype=torch.bfloat16,
+        )
+
     flow_shift = 5.0
     scheduler = UniPCMultistepScheduler(prediction_type='flow_prediction', use_flow_sigmas=True, num_train_timesteps=1000, flow_shift=flow_shift)
     pipe.scheduler = scheduler
@@ -112,14 +136,14 @@ def main():
     if args.use_teacache or args.use_fbcache:
         if args.use_teacache and args.use_fbcache:
             logger.warning(f"apply --use_teacache and --use_fbcache togather. we use FBCache")
-            use_cache="Fb"
+            use_cache = "Fb"
         elif args.use_teacache:
-            use_cache="Tea"
+            use_cache = "Tea"
         elif args.use_fbcache:
-            use_cache="Fb"
+            use_cache = "Fb"
         apply_cache_on_pipe(pipe=pipe, use_cache=use_cache, residual_diff_threshold=args.cache_threshold)
 
-    image = load_image("/data00/flux_dev_example.png")
+    image = load_image("entrypoints/image_examples/flux_dev_example.png")
     max_area = input_config.height * input_config.width
     aspect_ratio = image.height / image.width
     mod_value = pipe.vae_scale_factor_spatial * pipe.transformer.config.patch_size[1]
@@ -135,31 +159,35 @@ def main():
         components = {
             'vae': pipe.vae,
             'transformer': pipe.transformer,
+            'transformer_2': pipe.transformer_2,
         }
         for name, component in components.items():
             if component is not None:
-                if hasattr(component, 'forward'):
-                    optimized_forward = torch.compile(
-                        component.forward,
-                        mode="max-autotune-no-cudagraphs",
-                        dynamic=True,
-                    )
-                    setattr(component, 'forward', optimized_forward)
-                    print(f"Finish compiling the {name.replace('_', ' ').title()} forward function")
+                if hasattr(pipe, name):
+                    if hasattr(component, 'forward'):
+                        optimized_forward = torch.compile(
+                            component.forward,
+                            mode="default",
+                            dynamic=True,
+                        )
+                        setattr(component, 'forward', optimized_forward)
+                        print(f"Finish compiling the {name.replace('_', ' ').title()} forward function")
+                else:
+                    print(f"Skip compiling the {name.replace('_', ' ').title()}")
             else:
                 print(f"Skip compiling the {name.replace('_', ' ').title()}")
 
-        output = pipe(
-            image=image,
-            height=input_config.height,
-            width=input_config.width,
-            num_frames=input_config.num_frames,
-            prompt=input_config.prompt,
-            negative_prompt=input_config.negative_prompt,
-            num_inference_steps=1,
-            guidance_scale=5.0,
-            generator=torch.Generator(device="cuda").manual_seed(input_config.seed),
-        ).frames[0]
+    output = pipe(
+        image=image,
+        height=input_config.height,
+        width=input_config.width,
+        num_frames=input_config.num_frames,
+        prompt=input_config.prompt,
+        negative_prompt=input_config.negative_prompt,
+        num_inference_steps=1,
+        guidance_scale=5.0,
+        generator=torch.Generator(device="cuda").manual_seed(input_config.seed),
+    ).frames[0]
 
 
     torch.cuda.reset_peak_memory_stats()

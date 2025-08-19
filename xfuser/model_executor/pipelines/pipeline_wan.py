@@ -328,7 +328,11 @@ class xFuserWanPipeline(xFuserPipelineBaseWrapper):
                 latents.device, latents.dtype
             )
             latents = latents / latents_std + latents_mean
+            import time
+            start_time = time.time()
             video = self.vae.decode(latents, return_dict=False)[0]
+            end_time = time.time()
+            logger.info(f"vae decode cost {end_time - start_time}")
             video = self.video_processor.postprocess_video(video, output_type=output_type)
         else:
             video = latents
@@ -343,146 +347,138 @@ class xFuserWanPipeline(xFuserPipelineBaseWrapper):
 
 
 def parallelize_transformer(pipe: DiffusionPipeline):
-    transformer = pipe.transformer
-    original_forward = transformer.forward
+    def wrap_forward(target_transformer):
+        @functools.wraps(target_transformer.__class__.forward)
+        def new_forward(
+                self,
+                hidden_states: torch.Tensor,
+                timestep: torch.LongTensor,
+                encoder_hidden_states: torch.Tensor,
+                encoder_hidden_states_image: Optional[torch.Tensor] = None,
+                attention_kwargs: Optional[Dict[str, Any]] = None,
+                return_dict: bool = True,
+        ) -> Union[torch.Tensor, Dict[str, torch.Tensor]]:
+            if attention_kwargs is not None:
+                attention_kwargs = attention_kwargs.copy()
+                lora_scale = attention_kwargs.pop("scale", 1.0)
+            else:
+                lora_scale = 1.0
 
-    @functools.wraps(transformer.__class__.forward)
-    def new_forward(
-            self,
-            hidden_states: torch.Tensor,
-            timestep: torch.LongTensor,
-            encoder_hidden_states: torch.Tensor,
-            encoder_hidden_states_image: Optional[torch.Tensor] = None,
-            attention_kwargs: Optional[Dict[str, Any]] = None,
-            return_dict: bool = True,
-    ) -> Union[torch.Tensor, Dict[str, torch.Tensor]]:
-        if attention_kwargs is not None:
-            attention_kwargs = attention_kwargs.copy()
-            lora_scale = attention_kwargs.pop("scale", 1.0)
-        else:
-            lora_scale = 1.0
+            if USE_PEFT_BACKEND:
+                scale_lora_layers(self, lora_scale)
+            else:
+                if attention_kwargs is not None and attention_kwargs.get("scale", None) is not None:
+                    logger.warning(
+                        "Passing `scale` via `attention_kwargs` when not using the PEFT backend is ineffective."
+                    )
 
-        if USE_PEFT_BACKEND:
-            # weight the lora layers by setting `lora_scale` for each PEFT layer
-            scale_lora_layers(self, lora_scale)
-        else:
-            if attention_kwargs is not None and attention_kwargs.get("scale", None) is not None:
-                logger.warning(
-                    "Passing `scale` via `attention_kwargs` when not using the PEFT backend is ineffective."
-                )
+            batch_size, num_channels, num_frames, height, width = hidden_states.shape
+            p_t, p_h, p_w = self.config.patch_size
+            post_patch_num_frames = num_frames // p_t
+            post_patch_height = height // p_h
+            post_patch_width = width // p_w
 
-        batch_size, num_channels, num_frames, height, width = hidden_states.shape
-        p_t, p_h, p_w = self.config.patch_size
-        post_patch_num_frames = num_frames // p_t
-        post_patch_height = height // p_h
-        post_patch_width = width // p_w
+            rotary_emb = self.rope(hidden_states)
 
-        rotary_emb = self.rope(hidden_states)
+            hidden_states = self.patch_embedding(hidden_states)
+            hidden_states = hidden_states.flatten(2).transpose(1, 2)
 
-        hidden_states = self.patch_embedding(hidden_states)
-        hidden_states = hidden_states.flatten(2).transpose(1, 2)
+            if timestep.ndim == 2:
+                ts_seq_len = timestep.shape[1]
+                timestep = timestep.flatten()
+            else:
+                ts_seq_len = None
 
-        # timestep shape: batch_size, or batch_size, seq_len (wan 2.2 ti2v)
-        if timestep.ndim == 2:
-            ts_seq_len = timestep.shape[1]
-            timestep = timestep.flatten()  # batch_size * seq_len
-        else:
-            ts_seq_len = None
-
-        # split timestep hidden_states
-        timestep = torch.chunk(timestep, get_classifier_free_guidance_world_size(), dim=0)[
-            get_classifier_free_guidance_rank()]
-        hidden_states = torch.chunk(hidden_states,
-                                    get_classifier_free_guidance_world_size(),
-                                    dim=0)[get_classifier_free_guidance_rank()]
-        hidden_states = torch.chunk(hidden_states, get_sequence_parallel_world_size(), dim=-2)[
-            get_sequence_parallel_rank()]
-
-        temb, timestep_proj, encoder_hidden_states, encoder_hidden_states_image = self.condition_embedder(
-            timestep, encoder_hidden_states, encoder_hidden_states_image, timestep_seq_len=ts_seq_len
-        )
-        if ts_seq_len is not None:
-            # batch_size, seq_len, 6, inner_dim
-            timestep_proj = timestep_proj.unflatten(2, (6, -1))
-        else:
-            # batch_size, 6, inner_dim
-            timestep_proj = timestep_proj.unflatten(1, (6, -1))
-
-        if encoder_hidden_states_image is not None:
-            encoder_hidden_states = torch.concat([encoder_hidden_states_image, encoder_hidden_states], dim=1)
-
-        if encoder_hidden_states.shape[-2] % get_sequence_parallel_world_size() != 0:
-            split_text_embed_in_sp = False
-        else:
-            split_text_embed_in_sp = True
-        encoder_hidden_states = torch.chunk(encoder_hidden_states, get_classifier_free_guidance_world_size(), dim=0)[
-            get_classifier_free_guidance_rank()]
-        if split_text_embed_in_sp:
-            encoder_hidden_states = torch.chunk(encoder_hidden_states, get_sequence_parallel_world_size(), dim=-2)[
+            timestep = torch.chunk(timestep, get_classifier_free_guidance_world_size(), dim=0)[
+                get_classifier_free_guidance_rank()]
+            hidden_states = torch.chunk(hidden_states,
+                                        get_classifier_free_guidance_world_size(),
+                                        dim=0)[get_classifier_free_guidance_rank()]
+            hidden_states = torch.chunk(hidden_states, get_sequence_parallel_world_size(), dim=-2)[
                 get_sequence_parallel_rank()]
 
-        freqs_cos, freqs_sin = rotary_emb
+            temb, timestep_proj, encoder_hidden_states, encoder_hidden_states_image = self.condition_embedder(
+                timestep, encoder_hidden_states, encoder_hidden_states_image, timestep_seq_len=ts_seq_len
+            )
+            if ts_seq_len is not None:
+                timestep_proj = timestep_proj.unflatten(2, (6, -1))
+            else:
+                timestep_proj = timestep_proj.unflatten(1, (6, -1))
 
-        def get_rotary_emb_chunk(freqs):
-            freqs = torch.chunk(freqs, get_sequence_parallel_world_size(), dim=1)[get_sequence_parallel_rank()]
-            return freqs
+            if encoder_hidden_states_image is not None:
+                encoder_hidden_states = torch.concat([encoder_hidden_states_image, encoder_hidden_states], dim=1)
 
-        freqs_cos = get_rotary_emb_chunk(freqs_cos)
-        freqs_sin = get_rotary_emb_chunk(freqs_sin)
-        rotary_emb = (freqs_cos, freqs_sin)
+            if encoder_hidden_states.shape[-2] % get_sequence_parallel_world_size() != 0:
+                split_text_embed_in_sp = False
+            else:
+                split_text_embed_in_sp = True
+            encoder_hidden_states = torch.chunk(encoder_hidden_states, get_classifier_free_guidance_world_size(), dim=0)[
+                get_classifier_free_guidance_rank()]
+            if split_text_embed_in_sp:
+                encoder_hidden_states = torch.chunk(encoder_hidden_states, get_sequence_parallel_world_size(), dim=-2)[
+                    get_sequence_parallel_rank()]
 
-        # 4. Transformer blocks
-        if torch.is_grad_enabled() and self.gradient_checkpointing:
-            for block in self.blocks:
-                hidden_states = self._gradient_checkpointing_func(
-                    block, hidden_states, encoder_hidden_states, timestep_proj, rotary_emb
-                )
-        else:
-            for block in self.blocks:
-                hidden_states = block(hidden_states, encoder_hidden_states, timestep_proj, rotary_emb)
-        # 5. Output norm, projection & unpatchify
-        if temb.ndim == 3:
-            # batch_size, seq_len, inner_dim (wan 2.2 ti2v)
-            shift, scale = (self.scale_shift_table.unsqueeze(0) + temb.unsqueeze(2)).chunk(2, dim=2)
-            shift = shift.squeeze(2)
-            scale = scale.squeeze(2)
-        else:
-            # batch_size, inner_dim
-            shift, scale = (self.scale_shift_table + temb.unsqueeze(1)).chunk(2, dim=1)
+            freqs_cos, freqs_sin = rotary_emb
 
-        # Move the shift and scale tensors to the same device as hidden_states.
-        # When using multi-GPU inference via accelerate these will be on the
-        # first device rather than the last device, which hidden_states ends up
-        # on.
-        shift = shift.to(hidden_states.device)
-        scale = scale.to(hidden_states.device)
+            def get_rotary_emb_chunk(freqs):
+                freqs = torch.chunk(freqs, get_sequence_parallel_world_size(), dim=1)[get_sequence_parallel_rank()]
+                return freqs
 
-        hidden_states = (self.norm_out(hidden_states.float()) * (1 + scale) + shift).type_as(hidden_states)
-        hidden_states = self.proj_out(hidden_states)
+            freqs_cos = get_rotary_emb_chunk(freqs_cos)
+            freqs_sin = get_rotary_emb_chunk(freqs_sin)
+            rotary_emb = (freqs_cos, freqs_sin)
 
-        hidden_states = get_sp_group().all_gather(hidden_states, dim=-2)
-        hidden_states = get_cfg_group().all_gather(hidden_states, dim=0)
+            if torch.is_grad_enabled() and self.gradient_checkpointing:
+                for block in self.blocks:
+                    hidden_states = self._gradient_checkpointing_func(
+                        block, hidden_states, encoder_hidden_states, timestep_proj, rotary_emb
+                    )
+            else:
+                for block in self.blocks:
+                    hidden_states = block(hidden_states, encoder_hidden_states, timestep_proj, rotary_emb)
 
-        hidden_states = hidden_states.reshape(
-            batch_size, post_patch_num_frames, post_patch_height, post_patch_width, p_t, p_h, p_w, -1
-        )
-        hidden_states = hidden_states.permute(0, 7, 1, 4, 2, 5, 3, 6)
+            if temb.ndim == 3:
+                shift, scale = (self.scale_shift_table.unsqueeze(0) + temb.unsqueeze(2)).chunk(2, dim=2)
+                shift = shift.squeeze(2)
+                scale = scale.squeeze(2)
+            else:
+                shift, scale = (self.scale_shift_table + temb.unsqueeze(1)).chunk(2, dim=1)
 
-        output = hidden_states.flatten(6, 7).flatten(4, 5).flatten(2, 3)
+            shift = shift.to(hidden_states.device)
+            scale = scale.to(hidden_states.device)
 
-        if USE_PEFT_BACKEND:
-            # remove `lora_scale` from each PEFT layer
-            unscale_lora_layers(self, lora_scale)
+            hidden_states = (self.norm_out(hidden_states.float()) * (1 + scale) + shift).type_as(hidden_states)
+            hidden_states = self.proj_out(hidden_states)
 
-        if not return_dict:
-            return (output,)
+            hidden_states = get_sp_group().all_gather(hidden_states, dim=-2)
+            hidden_states = get_cfg_group().all_gather(hidden_states, dim=0)
 
-        return Transformer2DModelOutput(sample=output)
+            hidden_states = hidden_states.reshape(
+                batch_size, post_patch_num_frames, post_patch_height, post_patch_width, p_t, p_h, p_w, -1
+            )
+            hidden_states = hidden_states.permute(0, 7, 1, 4, 2, 5, 3, 6)
 
-    new_forward = new_forward.__get__(transformer)
-    transformer.forward = new_forward
+            output = hidden_states.flatten(6, 7).flatten(4, 5).flatten(2, 3)
 
-    # attn1: self attn  attn2: cross attn
+            if USE_PEFT_BACKEND:
+                unscale_lora_layers(self, lora_scale)
+
+            if not return_dict:
+                return (output,)
+
+            return Transformer2DModelOutput(sample=output)
+
+        return new_forward.__get__(target_transformer)
+
+    transformer = pipe.transformer
+    transformer.forward = wrap_forward(transformer)
     for block in transformer.blocks:
         block.attn1.processor = xFuserWanAttnProcessor2_0()
         block.attn2.processor = xFuserWanAttnProcessor2_0()
+
+    if pipe.transformer_2 is not None:
+        transformer_2 = pipe.transformer_2
+        transformer_2.forward = wrap_forward(transformer_2)
+        for block in transformer_2.blocks:
+            block.attn1.processor = xFuserWanAttnProcessor2_0()
+            block.attn2.processor = xFuserWanAttnProcessor2_0()

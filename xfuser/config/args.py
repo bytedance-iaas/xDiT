@@ -107,6 +107,7 @@ class xFuserArgs:
     enable_slicing: bool = False
     enable_fa3: bool = False
     enable_sage_attn: bool = False
+    enable_quantize: bool = False
     # DiTFastAttn arguments
     use_fast_attn: bool = False
     n_calib: int = 8
@@ -343,6 +344,12 @@ class xFuserArgs:
             help="Whether use sageattention for the attention layer.",
         )
         runtime_group.add_argument(
+            "--enable_quantize",
+            "--enable_quantize",
+            action="store_true",
+            help="Whether use quantize for the model.",
+        )
+        runtime_group.add_argument(
             "--use_svdq",
             "--use-svdq",
             action="store_true",
@@ -477,6 +484,7 @@ class xFuserArgs:
             fast_attn_config=fast_attn_config,
             enable_fa3=self.enable_fa3,
             enable_sage_attn=self.enable_sage_attn,
+            enable_quantize=self.enable_quantize,
             use_svdq=self.use_svdq,
             svdq_quantized_model_path=self.svdq_quantized_model_path,
         )

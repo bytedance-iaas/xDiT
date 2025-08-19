@@ -99,5 +99,7 @@ def apply_cache_on_pipe(
 
     if not shallow_patch:
         apply_cache_on_transformer(use_cache=use_cache, transformer=pipe.transformer, **kwargs)
+        if pipe.transformer_2 is not None:
+            apply_cache_on_transformer(use_cache=use_cache, transformer=pipe.transformer_2, **kwargs)
 
     return pipe

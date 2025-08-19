@@ -1684,7 +1684,10 @@ class xFuserWanAttnProcessor2_0(WanAttnProcessor):
         from yunchang.kernels import AttnType
 
         if SAGE_ATTENTION_AVAILABLE and self.enable_sage_attn:
-            self.hybrid_seq_parallel_attn = xFuserLongContextAttention(attn_type=AttnType.SAGE_AUTO)
+            if torch.cuda.get_device_capability()[0] >= 9:
+                self.hybrid_seq_parallel_attn = xFuserLongContextAttention(attn_type=AttnType.SAGE_AUTO)
+            else:
+                self.hybrid_seq_parallel_attn = xFuserLongContextAttention(attn_type=AttnType.SAGE_FP16)
         elif FLASH_ATTN_3_AVAILABLE and self.enable_fa3:
             self.hybrid_seq_parallel_attn = xFuserLongContextAttention(attn_type=AttnType.FA3)
         else:

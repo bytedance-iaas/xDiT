@@ -60,7 +60,6 @@ def main():
         setattr(xFuserWanAttnProcessor2_0, "enable_fa3", False)
 
     assert engine_args.pipefusion_parallel_degree == 1, "This script does not support PipeFusion."
-    assert engine_args.use_parallel_vae is False, "parallel VAE not implemented for Wan2.1"
 
     start_time = time.time()
     text_encoder = UMT5EncoderModel.from_pretrained(engine_config.model_config.model, subfolder="text_encoder", torch_dtype=torch.bfloat16)
@@ -68,6 +67,13 @@ def main():
     transformer = AutoModel.from_pretrained(engine_config.model_config.model, subfolder="transformer", torch_dtype=torch.bfloat16)
     load_elapsed = time.time() - start_time
     logger.info(f"loading checkpoint elapsed: {load_elapsed:.2f}")
+
+    if engine_config.enable_quantize:
+        from torchao.quantization import quantize_, Float8WeightOnlyConfig, float8_weight_only
+        quantize_(text_encoder, float8_weight_only())
+        quantize_(transformer, Float8WeightOnlyConfig())
+        if "Wan2.2" in engine_config.model_config.model:
+            quantize_(transformer_2, Float8WeightOnlyConfig())
 
     pipe = xFuserWanPipeline.from_pretrained(
         pretrained_model_name_or_path=engine_config.model_config.model,
@@ -77,6 +83,14 @@ def main():
         engine_config=engine_config,
         torch_dtype=torch.bfloat16,
     )
+
+    if engine_config.enable_quantize:
+        from torchao.quantization import quantize_, float8_dynamic_activation_float8_weight, float8_weight_only
+        quantize_(pipe.text_encoder, float8_weight_only())
+        quantize_(pipe.transformer, float8_dynamic_activation_float8_weight())
+        if pipe.transformer_2 is not None:
+            quantize_(pipe.transformer_2, float8_dynamic_activation_float8_weight())
+
     flow_shift = 5.0
     scheduler = UniPCMultistepScheduler(prediction_type='flow_prediction', use_flow_sigmas=True, num_train_timesteps=1000, flow_shift=flow_shift)
     pipe.scheduler = scheduler
@@ -117,18 +131,39 @@ def main():
 
     if engine_config.runtime_config.use_torch_compile:
         torch._inductor.config.reorder_for_compute_comm_overlap = True
-        pipe.transformer = torch.compile(pipe.transformer,
-            mode="max-autotune-no-cudagraphs")
-        output = pipe(
-            height=input_config.height,
-            width=input_config.width,
-            num_frames=input_config.num_frames,
-            prompt=input_config.prompt,
-            negative_prompt=input_config.negative_prompt,
-            num_inference_steps=1,
-            guidance_scale=5.0,
-            generator=torch.Generator(device="cuda").manual_seed(input_config.seed),
-        ).frames[0]
+        from xfuser.model_executor.torch_compile import apply_torch_compile_dynamic_shape_monkey_patch
+        apply_torch_compile_dynamic_shape_monkey_patch()
+        components = {
+            'vae': pipe.vae,
+            'transformer': pipe.transformer,
+            'transformer_2': pipe.transformer_2,
+        }
+        for name, component in components.items():
+            if component is not None:
+                if hasattr(pipe, name):
+                    if hasattr(component, 'forward'):
+                        optimized_forward = torch.compile(
+                            component.forward,
+                            mode="default",
+                            dynamic=True,
+                        )
+                        setattr(component, 'forward', optimized_forward)
+                        print(f"Finish compiling the {name.replace('_', ' ').title()} forward function")
+                else:
+                    print(f"Skip compiling the {name.replace('_', ' ').title()}")
+            else:
+                print(f"Skip compiling the {name.replace('_', ' ').title()}")
+
+    output = pipe(
+        height=input_config.height,
+        width=input_config.width,
+        num_frames=input_config.num_frames,
+        prompt=input_config.prompt,
+        negative_prompt=input_config.negative_prompt,
+        num_inference_steps=1,
+        guidance_scale=5.0,
+        generator=torch.Generator(device="cuda").manual_seed(input_config.seed),
+    ).frames[0]
 
     torch.cuda.reset_peak_memory_stats()
     start_time = time.time()

@@ -242,6 +242,7 @@ class EngineConfig:
     fast_attn_config: FastAttnConfig
     enable_fa3: bool = False
     enable_sage_attn: bool = False
+    enable_quantize: bool = False
     use_svdq: bool = False
     svdq_quantized_model_path: str = ""
 
